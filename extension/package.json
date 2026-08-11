@@ -2,10 +2,13 @@
   "name": "hw-imagelibrary-extension",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "Chromium capture adapter for hw_imageLibrary",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit"
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "test:browser": "npm run build && node tests/browser-fixtures.mjs"
   },
   "devDependencies": {
     "@types/chrome": "0.2.5",

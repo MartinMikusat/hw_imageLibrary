@@ -8,9 +8,20 @@
   </head>
   <body>
     <main>
-      <p class="eyebrow">HW_IMAGELIBRARY</p>
-      <h1>Capture scaffold</h1>
-      <p>The screenshot selector will be implemented in the DOM-capture milestone.</p>
+      <header>
+        <div>
+          <p class="eyebrow">HW_IMAGELIBRARY</p>
+          <h1>Capture image</h1>
+        </div>
+        <button id="collect" type="button">Collect</button>
+      </header>
+      <p id="status" role="status">Collect the visible images from the active tab.</p>
+      <section id="preview" hidden>
+        <img id="screenshot" alt="Frozen active-tab viewport">
+        <div id="overlays" aria-label="Image candidates"></div>
+      </section>
+      <section id="choices" hidden></section>
     </main>
+    <script type="module" src="dist/preview.js"></script>
   </body>
 </html>

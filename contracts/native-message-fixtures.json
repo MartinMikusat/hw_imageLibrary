@@ -1,0 +1,90 @@
+{
+  "valid": [
+    {
+      "wire_version": 1,
+      "type": "capture_begin",
+      "transfer_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      "capture_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "sequence": 0,
+      "captured_at_unix_ms": 1700000000000,
+      "page_url": "https://example.com/page",
+      "page_title": "Fixture",
+      "current_src": "https://example.com/image.png",
+      "alt_text": "fixture image",
+      "figure_caption": "fixture caption",
+      "initial_note": "",
+      "element_rect": {"x": 10, "y": 20, "width": 300, "height": 200},
+      "viewport": {"width": 1200, "height": 800},
+      "response_media_type": "image/png",
+      "declared_byte_count": 128
+    },
+    {
+      "wire_version": 1,
+      "type": "capture_chunk",
+      "transfer_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      "capture_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "sequence": 1,
+      "data_base64": "AA=="
+    },
+    {
+      "wire_version": 1,
+      "type": "capture_commit",
+      "transfer_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      "capture_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "sequence": 2,
+      "total_byte_count": 1
+    },
+    {
+      "wire_version": 1,
+      "type": "capture_cancel",
+      "transfer_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      "capture_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "sequence": 2,
+      "reason": "user cancelled"
+    }
+  ],
+  "invalid": [
+    {
+      "wire_version": 2,
+      "type": "capture_chunk",
+      "transfer_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      "capture_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "sequence": 1,
+      "data_base64": "AA=="
+    },
+    {
+      "wire_version": 1,
+      "type": "capture_begin",
+      "transfer_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      "capture_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "sequence": 0,
+      "captured_at_unix_ms": 1700000000000,
+      "page_url": "https://example.com/page",
+      "page_title": "Fixture",
+      "current_src": "file:///tmp/image.png",
+      "alt_text": "",
+      "figure_caption": "",
+      "initial_note": "",
+      "element_rect": {"x": 10, "y": 20, "width": 300, "height": 200},
+      "viewport": {"width": 1200, "height": 800},
+      "response_media_type": "image/png",
+      "declared_byte_count": 128
+    },
+    {
+      "wire_version": 1,
+      "type": "capture_chunk",
+      "transfer_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      "capture_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "sequence": 0,
+      "data_base64": "AA=="
+    },
+    {
+      "wire_version": 1,
+      "type": "capture_commit",
+      "transfer_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      "capture_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "sequence": 2,
+      "total_byte_count": 0
+    }
+  ]
+}

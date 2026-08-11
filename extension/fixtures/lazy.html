@@ -1,0 +1,8 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Lazy image fixture</title>
+<style>html,body{margin:0} img{display:block;width:120px;height:80px}</style>
+<img id="lazy" alt="lazy fixture">
+<pre id="result">pending</pre>
+<script>document.querySelector('#lazy').src = '/asset.png'</script>
+<script src="/candidate-collector-classic.js"></script><script src="/fixtures/fixture-driver.js"></script>

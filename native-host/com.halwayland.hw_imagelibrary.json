@@ -1,0 +1,9 @@
+{
+  "name": "com.halwayland.hw_imagelibrary",
+  "description": "hw_imageLibrary bounded capture proxy",
+  "path": "__NATIVE_HOST_PATH__",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://cgfndkekiaalhcfilkofjkdljmlnpdgo/"
+  ]
+}

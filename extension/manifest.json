@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "hw_imageLibrary",
   "version": "0.1.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyaQh3Dg4m+IEyxsTmAr7kop1XVVYwakx/QYX3WOcQ9V3BusJ8zKgCrC8fgKYSHKpYrubLrGGH/WssLeiy2/liDamc8TO3yedp4r6kjY5ESQsvC40tTHHpcgf2k1f/OM6W/3m5vChPR9oEA9aOVtmY5JxZwKcD7jGNT4W8u9XGukACYSCSeLydqfVoxFomNuBsBZgKra4Tv9PQuSMbCw54KpOrh/rfTSG52/1KAF0UDFj/ohYPLqDeuwQWlGKHyWFkbspVAHnae6cWEfwYXKV0GR7XJccypgi2XLd0hW3WoYdoWoWJ9+8b/MIIF55g6b5HA4SKX+OL73fPlE1cHpUawIDAQAB",
   "description": "Capture source-aware web images into the local hw_imageLibrary application.",
   "minimum_chrome_version": "114",
   "permissions": [
