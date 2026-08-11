@@ -115,6 +115,24 @@ view. The detail view displays the original image, source fields, and user note,
 and can open the recorded source page. Thumbnail files form a replaceable cache;
 they do not enter the provenance record.
 
+### Native interface baseline
+
+Use the established `hw_videoClips` and `hw_calendar` Odin interfaces as the
+default native application baseline. Build the viewer with the same thin AppKit
+shell, borderless custom window, Metal-backed immediate-mode rendering, and
+shared `hw_odin_ui_*` packages. Reuse the shared HW Light and HW Dark palettes,
+AppKit system monospaced font, measured body/label/heading typography, window
+controls, settings patterns, modal backdrop and dismissal behavior, command
+palette, Flash navigation, and unified control registry for pointer, keyboard,
+Accessibility, and command dispatch.
+
+Adapt that interface to the image-library workflow rather than inventing a
+separate application style. The chronological thumbnail grid is the primary
+library surface, and selection drives a focused detail view with the original
+image, provenance fields, user note, export action, and source-page action.
+Project-specific image viewing and thumbnail behavior may differ, but changes to
+the shared styling or interaction conventions require an explicit plan update.
+
 ## Verification fixtures
 
 Keep deterministic local pages for a plain image, `<picture>` with `srcset`, a

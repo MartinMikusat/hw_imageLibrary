@@ -21,7 +21,10 @@ The ordered milestones implement the approved
 5. [ ] **Add the structured CLI.** Implement capture list, show, search,
    open-source, and byte-identical export through the shared storage package.
 6. [ ] **Add the native Odin viewer.** Implement a chronological thumbnail grid,
-   image detail view, source metadata, user notes, and source-page navigation.
+   image detail view, source metadata, user notes, and source-page navigation on
+   the established `hw_videoClips` and `hw_calendar` AppKit, Metal, shared-theme,
+   typography, control-registry, settings, modal, command-palette, Flash, and
+   Accessibility interface baseline.
 7. [ ] **Verify Chrome and Brave.** Run the same deterministic fixture set in
    both browsers on macOS, including Retina scaling and the approved zoom matrix.
 
