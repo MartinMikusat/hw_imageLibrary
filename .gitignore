@@ -1,0 +1,6 @@
+.DS_Store
+build/
+*.dSYM/
+extension/dist/
+extension/node_modules/
+npm-debug.log*

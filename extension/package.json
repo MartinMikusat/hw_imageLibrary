@@ -1,0 +1,14 @@
+{
+  "name": "hw-imagelibrary-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chromium capture adapter for hw_imageLibrary",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.2.5",
+    "typescript": "7.0.2"
+  }
+}

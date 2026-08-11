@@ -1,0 +1,30 @@
+:root {
+  color-scheme: dark;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #11100f;
+  color: #ebe5dc;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  padding: 24px;
+}
+
+.eyebrow {
+  color: #ca8e63;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+}
+
+h1 {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+main > p:last-child {
+  color: #aaa39a;
+  line-height: 1.5;
+}

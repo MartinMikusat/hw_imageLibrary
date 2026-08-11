@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "hw_imageLibrary",
+  "version": "0.1.0",
+  "description": "Capture source-aware web images into the local hw_imageLibrary application.",
+  "minimum_chrome_version": "114",
+  "permissions": [
+    "activeTab",
+    "nativeMessaging",
+    "scripting",
+    "sidePanel"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "dist/service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Open hw_imageLibrary"
+  },
+  "side_panel": {
+    "default_path": "preview.html"
+  }
+}
