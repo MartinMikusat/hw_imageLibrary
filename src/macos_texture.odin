@@ -15,13 +15,25 @@ macos_texture_load_file :: proc(
 	)
 	if loader == nil {return}
 	defer msg_void(loader, sel_registerName("release"))
+	// The app's CAMetalLayer uses a non-sRGB pixel format and every UI color is
+	// authored as sRGB-encoded values that pass straight through the shader.
+	// MTKTextureLoader defaults to creating sRGB textures, which would decode
+	// the image to linear on sample and re-encode it only at a non-existent
+	// sRGB framebuffer — the classic double-gamma look (washed out or overly
+	// contrasty). Loading without sRGB keeps the source bytes intact.
+	options := msg_id_id_id(
+		objc_getClass("NSDictionary"),
+		sel_registerName("dictionaryWithObject:forKey:"),
+		msg_id_bool(objc_getClass("NSNumber"), sel_registerName("numberWithBool:"), false),
+		nsstring("MTKTextureLoaderOptionSRGB"),
+	)
 	error: Id
 	p := transmute(proc "c" (Id, Sel, Id, Id, ^Id) -> Id)objc_send_address
 	texture = p(
 		loader,
 		sel_registerName("newTextureWithContentsOfURL:options:error:"),
 		nsurl_file(path),
-		nil,
+		options,
 		&error,
 	)
 	if texture == nil || error != nil {return nil, 0, 0, false}
