@@ -122,6 +122,22 @@ The design does not require a cross-device lock service or CloudKit database.
 
 ## Development
 
+The single-instance dev watcher builds the debug app, relaunches it when
+sources change, and shuts it down on Ctrl-C. A second invocation in any
+terminal reports the running watcher instead of starting another:
+
+```sh
+./dev.sh
+```
+
+The watcher also stops the app's background `--service` process on each
+relaunch, so a rebuilt app never talks to a stale service, and archives crash
+reports plus memory diagnostics under `build/crashes/` and
+`build/memory-diagnostics/`. Launch in a specific build mode with
+`./dev.sh trace`, `./dev.sh asan`, or `./dev.sh release`; memory-instrumented
+launches via `./dev-memory.sh <scribble|guard-edges|zombies|guard-malloc>` and
+a one-shot LLDB session via `./dev-lldb.sh`.
+
 Build the debug app without launching it:
 
 ```sh
@@ -148,6 +164,12 @@ in Chrome or Brave:
 ```sh
 ./scripts/install-native-host.sh
 ```
+
+Sibling Odin repositories are pinned by URL and tested commit in
+[`dependencies.lock`](dependencies.lock); `./build.sh` rejects a mismatched
+checkout (the strict clean-tree check applies to release builds). Regenerate
+the lock after validating a new commit with
+`./scripts/dependencies.sh update`.
 
 The debug build requires an explicitly selected local root. A release build
 requires `HW_GALLERY_CODESIGN_IDENTITY`; its entitlements enable the

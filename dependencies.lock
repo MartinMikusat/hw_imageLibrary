@@ -1,0 +1,6 @@
+# Sibling repository, origin URL, and tested commit.
+hw_odin_ipc_localCommand https://github.com/MartinMikusat/hw_odin_ipc_localCommand.git bab49cbb144d05924165a6eb0bd09c5882a848b1
+hw_odin_matchSorter https://github.com/MartinMikusat/hw_odin_matchSorter.git 52bbe319503752881ebd777e0f3340fce027e017
+hw_odin_ui_commandPalette https://github.com/MartinMikusat/hw_odin_ui_commandPalette.git 72312d2f67cfc3d2ebc6a62fdbb1ba5bbc4e335f
+hw_odin_ui_flash https://github.com/MartinMikusat/hw_odin_ui_flash.git d06e98a40640b13eea5b979319022aad0a470d72
+hw_odin_ui_framework https://github.com/MartinMikusat/hw_odin_ui_framework.git c9a22543bcdfb607ba9d54c4e9e609308e879b8e
