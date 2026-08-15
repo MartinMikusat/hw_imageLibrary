@@ -130,6 +130,10 @@ terminal reports the running watcher instead of starting another:
 ./dev.sh
 ```
 
+This watcher is the required default for every native app in the workspace;
+see the Development Watcher contract in
+[`../notes/native-application-contracts.md`](../notes/native-application-contracts.md).
+
 The watcher also stops the app's background `--service` process on each
 relaunch, so a rebuilt app never talks to a stale service, and archives crash
 reports plus memory diagnostics under `build/crashes/` and
