@@ -212,13 +212,9 @@ library_cli_initialize :: proc(args: []string) -> (int, bool) {
 }
 
 library_cli_start_service :: proc(socket_path: string) -> bool {
-	// The background service cannot initialize without a configured library,
-	// so skip the spawn-and-poll when settings are absent or invalid. Without
-	// this guard, a freshly launched GUI blocks its main thread for the full
-	// poll interval on every failed exchange while the service can never run.
-	if _, settings_error := local_settings_load(context.temp_allocator); settings_error != .None {
-		return false
-	}
+	// The background service now starts without a configured library in
+	// folder-only mode, so spawning is always meaningful. A service that fails
+	// to boot (for example a locked database) costs the caller one poll.
 	executable, executable_error := os.get_absolute_path(os.args[0], context.temp_allocator)
 	if executable_error != nil {return false}
 	command := []string{executable, "--service"}

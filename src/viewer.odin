@@ -210,7 +210,11 @@ viewer_reload_captures :: proc() -> bool {
 	)
 	if !exchanged || !response.ok {
 		if exchanged {
-			viewer_set_status(response.message)
+			if response.error_code == "index_unavailable" {
+				viewer_set_status("No library configured — add image folders from the folder bar.")
+			} else {
+				viewer_set_status(response.message)
+			}
 			library_service_response_destroy(&response)
 		} else {
 			viewer_set_status("The library service is unavailable.")

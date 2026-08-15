@@ -174,6 +174,8 @@ library_service_take_rescan :: proc(state: ^Library_Service_State) -> bool {
 }
 
 library_service_poll :: proc(state: ^Library_Service_State) {
+	// Folder-only mode has no library root to rescan or rebuild.
+	if len(state.root.path) == 0 {return}
 	if !state.periodic_scan_started ||
 	   time.tick_since(state.last_periodic_scan) >= 5*time.Second {
 		state.last_periodic_scan = time.tick_now()
@@ -347,15 +349,61 @@ library_service_initialize :: proc(
 	return .None
 }
 
+// library_service_initialize_folders_only starts the background service
+// without a capture-library root so folder sources work on a fresh launch.
+// The SQLite index is created (including the folder tables); the library index
+// stays unavailable until the user chooses a library root and the service
+// restarts.
+library_service_initialize_folders_only :: proc(
+	state: ^Library_Service_State,
+	support_path: string,
+) -> Library_Service_Error {
+	if state == nil || len(support_path) == 0 {return .Path}
+	if !library_ensure_directory(support_path) {return .Path}
+	lock_path, lock_ok := library_service_lock_path(support_path, context.temp_allocator)
+	if !lock_ok {return .Path}
+	if !local_command.owner_lock_try_acquire(&state.owner_lock, lock_path) {
+		return .Already_Running
+	}
+	initialized := false
+	defer if !initialized {library_service_destroy(state)}
+	state.support_path = strings.clone(support_path)
+	database_path, database_ok := library_service_database_path(support_path, context.temp_allocator)
+	if !database_ok {return .Path}
+	database, database_opened := sqlite_open(database_path)
+	if !database_opened {return .Database}
+	state.database = database
+	// Create the full schema so the folder tables exist even without a
+	// library root; the capture index remains unpopulated.
+	if !library_index_create_schema(database) {return .Index}
+	socket_path, socket_ok := library_service_socket_path(support_path, context.allocator)
+	if !socket_ok {return .Path}
+	state.socket_path = socket_path
+	ingest_socket_path, ingest_socket_ok := ingest_ipc_socket_path(
+		support_path,
+		context.allocator,
+	)
+	if !ingest_socket_ok {return .Path}
+	state.ingest_socket_path = ingest_socket_path
+	library_service_set_running(state, true)
+	initialized = true
+	return .None
+}
+
 library_service_initialize_configured :: proc(
 	state: ^Library_Service_State,
 ) -> Library_Service_Error {
 	settings, settings_error := local_settings_load(context.allocator)
-	if settings_error != .None {return .Settings}
-	settings_owned := true
-	defer if settings_owned {local_settings_destroy(&settings)}
 	support_path, support_error := macos_application_support_directory(context.temp_allocator)
 	if support_error != .None {return .Path}
+	if settings_error != .None {
+		// No library root configured. Folder sources are independent of the
+		// capture library, so start the service in folder-only mode; capture
+		// commands report the index as unavailable until a root is chosen.
+		return library_service_initialize_folders_only(state, support_path)
+	}
+	settings_owned := true
+	defer if settings_owned {local_settings_destroy(&settings)}
 	root_path := settings.library_path
 	if settings.library_mode == LOCAL_SETTINGS_MODE_BOOKMARK {
 		resolution, bookmark_error := macos_bookmark_resolve(
@@ -1433,7 +1481,8 @@ library_service_execute :: proc(
 		return library_service_error_response("protocol_version", "Unsupported service protocol version.")
 	}
 	if !state.index_available && request.command != "health" &&
-	   request.command != "library.rebuild" && request.command != "service.stop" {
+	   request.command != "library.rebuild" && request.command != "service.stop" &&
+	   !strings.has_prefix(request.command, "folder.") {
 		return library_service_error_response(
 			"index_unavailable",
 			"Rebuild the local index before using the library.",
@@ -1919,8 +1968,12 @@ library_service_handle_request :: proc(
 
 library_service_start :: proc(state: ^Library_Service_State) -> Library_Service_Error {
 	native_ingestion_cleanup_staging(state)
-	if !macos_file_presenter_start(&state.file_presenter, state) {
-		return .Presenter
+	// The file presenter tracks the capture-library root; folder-only mode has
+	// no root, so it must not start.
+	if len(state.root.path) > 0 {
+		if !macos_file_presenter_start(&state.file_presenter, state) {
+			return .Presenter
+		}
 	}
 	if local_command.server_start(&state.server, {
 		path = state.socket_path,
@@ -1928,7 +1981,7 @@ library_service_start :: proc(state: ^Library_Service_State) -> Library_Service_
 		user_data = state,
 		request_timeout = 5*time.Second,
 	}) != .None {
-		macos_file_presenter_stop(&state.file_presenter)
+		if len(state.root.path) > 0 {macos_file_presenter_stop(&state.file_presenter)}
 		return .Socket
 	}
 	if !ingest_ipc_server_start(
@@ -1937,7 +1990,7 @@ library_service_start :: proc(state: ^Library_Service_State) -> Library_Service_
 		state,
 	) {
 		local_command.server_stop(&state.server)
-		macos_file_presenter_stop(&state.file_presenter)
+		if len(state.root.path) > 0 {macos_file_presenter_stop(&state.file_presenter)}
 		return .Socket
 	}
 	return .None
