@@ -55,7 +55,9 @@ case "$MODE" in
     ;;
 esac
 
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/extension"
+mkdir -p "$APP/Contents/MacOS" \
+  "$APP/Contents/Resources/extension" \
+  "$APP/Contents/Resources/Icons/Iconoir"
 
 if xcrun metal -help >/dev/null 2>&1; then
   "$UI_FRAMEWORK_ROOT/scripts/build-metallib.sh" \
@@ -77,6 +79,12 @@ hw-odin build "$ROOT/src" \
 cp "$APP/Contents/MacOS/hw_gallery" "$APP/Contents/MacOS/hw_gallery-service"
 cp "$APP/Contents/MacOS/hw_gallery" "$APP/Contents/MacOS/hw_gallery-native-host"
 cp "$ROOT/Info.plist" "$APP/Contents/Info.plist"
+ICON_ROOT="$ROOT/resources/icons/iconoir"
+cp "$ICON_ROOT/xmark.svg" "$APP/Contents/Resources/Icons/Iconoir/xmark.svg"
+cp "$ICON_ROOT/minus.svg" "$APP/Contents/Resources/Icons/Iconoir/minus.svg"
+cp "$ICON_ROOT/maximize.svg" "$APP/Contents/Resources/Icons/Iconoir/maximize.svg"
+cp "$ICON_ROOT/settings.svg" "$APP/Contents/Resources/Icons/Iconoir/settings.svg"
+cp "$ICON_ROOT/LICENSE" "$APP/Contents/Resources/Icons/Iconoir/LICENSE"
 
 npm run build --prefix "$ROOT/extension"
 cp "$ROOT/extension/manifest.json" "$APP/Contents/Resources/extension/manifest.json"

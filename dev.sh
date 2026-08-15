@@ -45,6 +45,7 @@ fingerprint() {
   {
     stat -f '%m:%z:%N' \
       "$ROOT"/src/*.odin \
+      "$ROOT"/resources/icons/iconoir/* \
       "$ROOT"/extension/src/*.ts \
       "$ROOT"/extension/*.html \
       "$ROOT"/extension/*.css \

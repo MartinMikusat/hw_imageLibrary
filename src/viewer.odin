@@ -157,6 +157,11 @@ Viewer_State :: struct {
 	reload_started:              bool,
 	reload_failed:               bool,
 	loads_this_frame:            int,
+	resize_edges:                u8,
+	resize_start_mouse:          Point,
+	resize_start_frame:          Rect,
+	window_zoom_restore_frame:   Rect,
+	window_has_zoom_restore:     bool,
 }
 
 viewer: Viewer_State
@@ -358,17 +363,23 @@ viewer_execute_command :: proc(id: command_palette.Entry_ID) {
 viewer_execute_action :: proc(action: Viewer_Action) {
 	switch action.kind {
 	case .Window_Close:
-		msg_void_id(viewer.window, sel_registerName("performClose:"), nil)
+		msg_void(viewer.window, sel_registerName("close"))
 	case .Window_Minimize:
+		msg_void_u(viewer.window, sel_registerName("setStyleMask:"), VIEWER_WINDOW_MINIMIZE_STYLE)
 		msg_void_id(viewer.window, sel_registerName("miniaturize:"), nil)
+		msg_void_u(viewer.window, sel_registerName("setStyleMask:"), VIEWER_WINDOW_STYLE)
 	case .Window_Zoom:
-		msg_void_id(viewer.window, sel_registerName("zoom:"), nil)
+		viewer_toggle_window_zoom()
 	case .Refresh:
 		_ = viewer_reload_captures()
 	case .Open_Settings:
-		viewer.modal = .Settings
-		viewer_reload_settings()
-		viewer.needs_redraw = true
+		if viewer.modal == .Settings {
+			viewer_execute_action({kind=.Close_Modal})
+		} else {
+			viewer.modal = .Settings
+			viewer_reload_settings()
+			viewer.needs_redraw = true
+		}
 	case .Close_Modal:
 		command_palette.close(&viewer.palette)
 		viewer.modal = .None
@@ -850,45 +861,35 @@ viewer_add_text :: proc(
 viewer_add_header :: proc(frame: ^framework_ui.Frame, theme: hal_ui.Palette) {
 	header := hal_ui.header_rect(f32(viewer.width), f32(viewer.height))
 	viewer_box(frame, "header background", "", header, {background=theme.header, opacity=1}, {.Draw_Background})
-	labels := [3]string{"×", "−", "□"}
-	names := [3]string{"window close", "window minimize", "window zoom"}
-	actions := [3]Viewer_Action_Kind{.Window_Close, .Window_Minimize, .Window_Zoom}
-	for index in 0..<3 {
-		viewer_control(
-			frame,
-			names[index],
-			names[index],
-			labels[index],
-			hal_ui.window_control_rect(index, f32(viewer.height)),
-			{kind=actions[index]},
-			hal_ui.control_style(theme),
-		)
-	}
+	viewer_add_window_chrome(frame, theme, .Base, true)
+	refresh := viewer_refresh_rect(f32(viewer.width), f32(viewer.height))
 	viewer_add_text(
 		frame,
 		"window title",
-		"IMAGE LIBRARY",
-		hal_ui.title_rect(f32(viewer.width), f32(viewer.height), f32(viewer.width)-190),
+		"hw_gallery / IMAGE LIBRARY",
+		hal_ui.title_rect(f32(viewer.width), f32(viewer.height), refresh.x-hal_ui.METRICS.gap),
 		theme.text,
-		12,
+		hal_ui.METRICS.base_font,
 	)
+	refresh_style := viewer_chrome_button_style(theme)
+	refresh_style.text = theme.alternate
+	refresh_style.text_style = {
+		font=VIEWER_FONT,
+		size=hal_ui.METRICS.base_font,
+		tracking=-0.45,
+		horizontal=.Center,
+		vertical=.Center,
+		inset=5,
+		truncate=true,
+	}
 	viewer_control(
 		frame,
 		"refresh",
 		"refresh library",
 		"REFRESH",
-		{f32(viewer.width)-180, f32(viewer.height)-32, 80, 26},
+		refresh,
 		{kind=.Refresh},
-		hal_ui.control_style(theme),
-	)
-	viewer_control(
-		frame,
-		"settings",
-		"library settings",
-		"SETTINGS",
-		{f32(viewer.width)-94, f32(viewer.height)-32, 88, 26},
-		{kind=.Open_Settings},
-		hal_ui.control_style(theme),
+		refresh_style,
 	)
 }
 
@@ -1230,6 +1231,9 @@ viewer_build_frame :: proc() -> framework_ui.Frame {
 	case .None:
 	}
 	if viewer.modal == .None {viewer_add_flash_hints(&frame, theme)}
+	if viewer.modal != .None {
+		viewer_add_window_chrome(&frame, theme, .Modal, false)
+	}
 	return frame
 }
 
@@ -1282,6 +1286,8 @@ viewer_on_mouse_down :: proc "c" (self: Id, command: Sel, event: Id) {
 	context = runtime.default_context()
 	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 	point := viewer_event_point(event)
+	if viewer_begin_resize(point) {return}
+	click_count := msg_uint(event, sel_registerName("clickCount"))
 	activation, activated := framework_macos.pointer_activation_view(
 		viewer.registry,
 		.Primary_Press,
@@ -1293,9 +1299,29 @@ viewer_on_mouse_down :: proc "c" (self: Id, command: Sel, event: Id) {
 			return
 		}
 	}
-	if point.y >= viewer.height-f64(VIEWER_HEADER_HEIGHT) && viewer.modal == .None {
-		msg_void_id(viewer.window, sel_registerName("performWindowDragWithEvent:"), event)
+	if point.y >= viewer.height-f64(VIEWER_HEADER_HEIGHT) {
+		if viewer_header_click_should_zoom(click_count) {
+			viewer_toggle_window_zoom()
+		} else {
+			msg_void_id(viewer.window, sel_registerName("performWindowDragWithEvent:"), event)
+		}
 	}
+}
+
+viewer_on_mouse_dragged :: proc "c" (self: Id, command: Sel, event: Id) {
+	context = runtime.default_context()
+	_ = self
+	_ = command
+	_ = event
+	viewer_apply_resize()
+}
+
+viewer_on_mouse_up :: proc "c" (self: Id, command: Sel, event: Id) {
+	context = runtime.default_context()
+	_ = self
+	_ = command
+	_ = event
+	viewer.resize_edges = 0
 }
 
 viewer_on_scroll :: proc "c" (self: Id, command: Sel, event: Id) {
@@ -1412,6 +1438,10 @@ viewer_on_key_down :: proc "c" (self: Id, command: Sel, event: Id) {
 	}
 	if key_code == 40 && modifiers & VIEWER_COMMAND_MODIFIER != 0 {
 		viewer_open_command_palette()
+		return
+	}
+	if key_code == 43 && modifiers & VIEWER_COMMAND_MODIFIER != 0 {
+		viewer_execute_action({kind=.Open_Settings})
 		return
 	}
 	if viewer.modal != .None {
@@ -1539,6 +1569,8 @@ viewer_register_classes :: proc() -> (view_class, window_class: Id) {
 	view_class = objc_allocateClassPair(objc_getClass("NSView"), "hw_gallery_MetalView", 0)
 	class_addMethod(view_class, sel_registerName("acceptsFirstResponder"), rawptr(viewer_on_accepts_first), "B@:")
 	class_addMethod(view_class, sel_registerName("mouseDown:"), rawptr(viewer_on_mouse_down), "v@:@")
+	class_addMethod(view_class, sel_registerName("mouseDragged:"), rawptr(viewer_on_mouse_dragged), "v@:@")
+	class_addMethod(view_class, sel_registerName("mouseUp:"), rawptr(viewer_on_mouse_up), "v@:@")
 	class_addMethod(view_class, sel_registerName("scrollWheel:"), rawptr(viewer_on_scroll), "v@:@")
 	class_addMethod(view_class, sel_registerName("keyDown:"), rawptr(viewer_on_key_down), "v@:@")
 	class_addMethod(view_class, sel_registerName("isAccessibilityElement"), rawptr(viewer_on_ax_is_element), "B@:")

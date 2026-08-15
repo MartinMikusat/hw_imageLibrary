@@ -16,6 +16,7 @@ Models used:
 
 - **gpt-5.6-sol**
 - **deepseek-v4-flash**
+- **Grok 4.6**
 
 ## Status
 
@@ -38,6 +39,10 @@ started after a scan, or per-folder via TAG). The viewer exposes these sources
 through a source bar (library and folder chips, add/scan/tag/remove, search
 field), folder grids with on-demand thumbnails, and a detail panel with
 open-in-Finder, copy-to-clipboard, copy-to-folder, and export actions. The
+viewer chrome matches `hw_calendar`: a 38-point header, Iconoir close /
+minimize / zoom controls, a settings gear after those controls, header drag,
+double-click zoom to the screen visible frame, and 6-point edge resize. Open
+Settings from the gear or `Command-,`. The
 reusable [`hw_odin_imageSimilarity`](../hw_odin_imageSimilarity/README.md)
 library v1 is implemented with an Apple Vision feature-print embedder, a
 pure-Odin perceptual-hash prefilter, and a SIMD brute-force similarity index;
@@ -178,6 +183,14 @@ the lock after validating a new commit with
 The debug build requires an explicitly selected local root. A release build
 requires `HW_GALLERY_CODESIGN_IDENTITY`; its entitlements enable the
 app-owned iCloud Documents container.
+
+Bundled icons:
+
+- Iconoir Regular 7.11.1 at commit `3497016dcb93122b5a64a2df1221598a14ecf4f3`
+- Source: <https://github.com/iconoir-icons/iconoir/tree/v7.11.1/icons/regular>
+- Archive SHA-256: `6a22cb1c3eaa49485a5f40cf276c0d063af0792d7bfed8b4bec4fbfc8866e5b2`
+- Bundled file checksums: [dependencies.lock](dependencies.lock)
+- License: [MIT](resources/icons/iconoir/LICENSE)
 
 The repository currently grants no software license. Public visibility permits
 inspection but does not grant reuse or redistribution rights.

@@ -4,3 +4,11 @@ hw_odin_matchSorter https://github.com/MartinMikusat/hw_odin_matchSorter.git 52b
 hw_odin_ui_commandPalette https://github.com/MartinMikusat/hw_odin_ui_commandPalette.git 72312d2f67cfc3d2ebc6a62fdbb1ba5bbc4e335f
 hw_odin_ui_flash https://github.com/MartinMikusat/hw_odin_ui_flash.git d06e98a40640b13eea5b979319022aad0a470d72
 hw_odin_ui_framework https://github.com/MartinMikusat/hw_odin_ui_framework.git c9a22543bcdfb607ba9d54c4e9e609308e879b8e
+
+# Bundled Iconoir release and file checksums.
+iconoir v7.11.1 3497016dcb93122b5a64a2df1221598a14ecf4f3 https://github.com/iconoir-icons/iconoir/archive/refs/tags/v7.11.1.tar.gz 6a22cb1c3eaa49485a5f40cf276c0d063af0792d7bfed8b4bec4fbfc8866e5b2
+iconoir-file LICENSE 869b60da1ada5b896d1f285c3c24ca193d612e308d1710a77a58f2f572eb4fa2
+iconoir-file maximize.svg 3a3048cdc0e8e4aef5d68353b5434f0c0e074dc672b6c0abf25a5a64bc5cc8f4
+iconoir-file minus.svg babb05bca016bffdd38cbd1dcaeef6ccdf42fc8654124dee169a412eeed6d425
+iconoir-file settings.svg 437c253a1c11ff214c490c766f2a3cdcf8547399fd0be48a7d222bf0703aefb5
+iconoir-file xmark.svg 61aa0a4913a440aaafcc45064a87e24fe8eb22ba4abc4c5ef020530928ed8daf
