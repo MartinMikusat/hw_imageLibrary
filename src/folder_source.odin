@@ -8,7 +8,7 @@ import "core:time"
 import "core:crypto/sha2"
 import "core:encoding/hex"
 
-FOLDER_INDEX_SCHEMA_VERSION :: 1
+FOLDER_INDEX_SCHEMA_VERSION :: 2
 
 // Folder roots are user-selected external folders indexed in place. The files
 // are never moved or copied; the machine-local SQLite index mirrors them and
@@ -35,6 +35,8 @@ CREATE TABLE IF NOT EXISTS folder_images (
   pixel_height INTEGER NOT NULL,
   tags TEXT NOT NULL DEFAULT '',
   generated_tags TEXT NOT NULL DEFAULT '',
+  recognition_tagged INTEGER NOT NULL DEFAULT 0,
+  recognition_failed INTEGER NOT NULL DEFAULT 0,
   UNIQUE(root_id, path)
 );
 CREATE INDEX IF NOT EXISTS folder_images_root ON folder_images(root_id);
@@ -116,7 +118,42 @@ delete_strings :: proc(values: []string) {
 }
 
 folder_index_create_schema :: proc(database: ^SQLite_DB) -> bool {
-	return sqlite_execute(database, FOLDER_INDEX_SCHEMA)
+	if !sqlite_execute(database, FOLDER_INDEX_SCHEMA) {return false}
+	return folder_index_migrate(database)
+}
+
+// folder_index_migrate upgrades databases created by an earlier schema
+// version. CREATE TABLE IF NOT EXISTS does not add columns to an existing
+// table, so each additive change is detected and applied here.
+folder_index_migrate :: proc(database: ^SQLite_DB) -> bool {
+	if database == nil {return false}
+	statement, prepared := sqlite_prepare(database, `PRAGMA table_info(folder_images);`)
+	if !prepared {return false}
+	defer sqlite3_finalize(statement)
+	has_tagged := false
+	has_failed := false
+	for sqlite3_step(statement) == SQLITE_ROW {
+		name := sqlite_column_string(statement, 1, context.temp_allocator)
+		if name == "recognition_tagged" {has_tagged = true}
+		if name == "recognition_failed" {has_failed = true}
+	}
+	if !has_tagged {
+		if !sqlite_execute(
+			database,
+			`ALTER TABLE folder_images ADD COLUMN recognition_tagged INTEGER NOT NULL DEFAULT 0;`,
+		) {
+			return false
+		}
+	}
+	if !has_failed {
+		if !sqlite_execute(
+			database,
+			`ALTER TABLE folder_images ADD COLUMN recognition_failed INTEGER NOT NULL DEFAULT 0;`,
+		) {
+			return false
+		}
+	}
+	return true
 }
 
 folder_service_root_destroy :: proc(value: ^Folder_Service_Root, allocator := context.allocator) {
@@ -595,7 +632,8 @@ ON CONFLICT(root_id, path) DO UPDATE SET
   size_bytes = excluded.size_bytes,
   modified_unix_ms = excluded.modified_unix_ms,
   pixel_width = excluded.pixel_width,
-  pixel_height = excluded.pixel_height;
+  pixel_height = excluded.pixel_height,
+  recognition_failed = 0;
 `)
 	if !prepared {return false}
 	defer sqlite3_finalize(statement)
@@ -631,4 +669,97 @@ folder_rebuild_fts :: proc(database: ^SQLite_DB, root_id: i64) -> bool {
 INSERT INTO folder_images_fts (root_id, path, tags, generated_tags)
 SELECT root_id, path, tags, generated_tags FROM folder_images;
 `)
+}
+
+// folder_image_tag_set writes the generated keyword set for one image. The
+// full-text index for the root is rebuilt separately so search and row state
+// stay consistent.
+folder_image_tag_set :: proc(
+	database: ^SQLite_DB,
+	root_id, image_id: i64,
+	generated_tags: string,
+) -> bool {
+	statement, prepared := sqlite_prepare(database, `
+UPDATE folder_images SET generated_tags = ?, recognition_tagged = 1, recognition_failed = 0
+WHERE root_id = ? AND image_id = ?;`)
+	if !prepared {return false}
+	defer sqlite3_finalize(statement)
+	return sqlite_bind_text_value(statement, 1, generated_tags) &&
+	       sqlite_bind_i64_value(statement, 2, root_id) &&
+	       sqlite_bind_i64_value(statement, 3, image_id) &&
+	       sqlite3_step(statement) == SQLITE_DONE
+}
+
+// folder_image_tag_fail marks an image as permanently unclassifiable so a tag
+// batch cannot stall on the same file forever. A later rescan clears the flag,
+// giving a changed file a fresh recognition attempt.
+folder_image_tag_fail :: proc(
+	database: ^SQLite_DB,
+	root_id, image_id: i64,
+) -> bool {
+	statement, prepared := sqlite_prepare(database, `
+UPDATE folder_images SET recognition_failed = 1
+WHERE root_id = ? AND image_id = ?;`)
+	if !prepared {return false}
+	defer sqlite3_finalize(statement)
+	return sqlite_bind_i64_value(statement, 1, root_id) &&
+	       sqlite_bind_i64_value(statement, 2, image_id) &&
+	       sqlite3_step(statement) == SQLITE_DONE
+}
+
+// folder_tag_candidates returns up to limit images in a root that have no
+// generated tags yet, oldest first, so recognition can walk a folder in
+// stable order.
+folder_tag_candidates :: proc(
+	database: ^SQLite_DB,
+	root_id: i64,
+	limit: int,
+	allocator := context.allocator,
+) -> ([]Folder_Index_Image, bool) {
+	statement, prepared := sqlite_prepare(database, `
+SELECT image_id, root_id, path, media_type, size_bytes, modified_unix_ms,
+       pixel_width, pixel_height, tags, generated_tags
+FROM folder_images
+WHERE root_id = ? AND recognition_tagged = 0 AND recognition_failed = 0
+ORDER BY image_id
+LIMIT ?;`)
+	if !prepared {return nil, false}
+	defer sqlite3_finalize(statement)
+	if !sqlite_bind_i64_value(statement, 1, root_id) ||
+	   !sqlite_bind_int_value(statement, 2, limit) {
+		return nil, false
+	}
+	result: [dynamic]Folder_Index_Image
+	for sqlite3_step(statement) == SQLITE_ROW {
+		append(&result, Folder_Index_Image{
+			image_id = i64(sqlite3_column_int64(statement, 0)),
+			root_id = i64(sqlite3_column_int64(statement, 1)),
+			path = sqlite_column_string(statement, 2, allocator),
+			media_type = sqlite_column_string(statement, 3, allocator),
+			size_bytes = i64(sqlite3_column_int64(statement, 4)),
+			modified_unix_ms = i64(sqlite3_column_int64(statement, 5)),
+			pixel_width = int(sqlite3_column_int64(statement, 6)),
+			pixel_height = int(sqlite3_column_int64(statement, 7)),
+			tags = sqlite_column_string(statement, 8, allocator),
+			generated_tags = sqlite_column_string(statement, 9, allocator),
+		})
+	}
+	return result[:], true
+}
+
+// folder_tagged_count counts images in a root that have been run through
+// recognition (including images that produced no labels), for progress
+// reporting.
+folder_tagged_count :: proc(
+	database: ^SQLite_DB,
+	root_id: i64,
+) -> (int, bool) {
+	statement, prepared := sqlite_prepare(database, `
+SELECT COUNT(*) FROM folder_images
+WHERE root_id = ? AND recognition_tagged = 1;`)
+	if !prepared {return 0, false}
+	defer sqlite3_finalize(statement)
+	if !sqlite_bind_i64_value(statement, 1, root_id) {return 0, false}
+	if sqlite3_step(statement) != SQLITE_ROW {return 0, false}
+	return int(i64(sqlite3_column_int64(statement, 0))), true
 }

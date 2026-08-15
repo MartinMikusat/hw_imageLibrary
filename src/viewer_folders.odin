@@ -181,6 +181,66 @@ viewer_folder_scan_step :: proc() {
 	viewer_set_status(fmt.tprintf("Scan complete: %d images", count))
 	fmt.eprintf("[viewer] scan complete: %d images\n", count)
 	viewer.needs_redraw = true
+	// Recognition follows the scan in the background.
+	if count > 0 {viewer_start_tagging(viewer.active_root_id)}
+}
+
+// viewer_start_tagging kicks off recognition over every untagged image in the
+// root, batched by the frame timer like the scan.
+viewer_start_tagging :: proc(root_id: i64) {
+	if root_id <= 0 {return}
+	viewer.tagging_root_id = root_id
+	viewer.tagged_so_far = 0
+	viewer.last_tag_step = time.tick_add(time.tick_now(), -400*time.Millisecond)
+	viewer_folder_tag_step()
+}
+
+// viewer_folder_tag_step advances recognition for the active root by one batch
+// and reports progress on the status line.
+viewer_folder_tag_step :: proc() {
+	if viewer.tagging_root_id <= 0 {return}
+	response, exchanged := library_cli_exchange({
+		protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION,
+		command="folder.tag",
+		root_id=viewer.tagging_root_id,
+	})
+	if !exchanged {
+		viewer.tagging_root_id = 0
+		viewer_set_status("The library service is unavailable; recognition did not run.")
+		fmt.eprintln("[viewer] folder.tag exchange failed (service unreachable)")
+		viewer.needs_redraw = true
+		return
+	}
+	if !response.ok {
+		viewer.tagging_root_id = 0
+		if response.error_code == "recognition_disabled" {
+			viewer_set_status("Image recognition is disabled.")
+		} else {
+			viewer_set_status(fmt.tprintf("Recognition failed: %s", response.message))
+		}
+		fmt.eprintf("[viewer] folder.tag failed: %s\n", response.message)
+		library_service_response_destroy(&response)
+		viewer.needs_redraw = true
+		return
+	}
+	done := response.message == "complete"
+	viewer.tagged_so_far += response.tagged
+	library_service_response_destroy(&response)
+	if !done {
+		viewer_set_status(fmt.tprintf("Tagging… %d images tagged", viewer.tagged_so_far))
+		viewer.needs_redraw = true
+		return
+	}
+	viewer.tagging_root_id = 0
+	viewer_reload_folder_images()
+	count := len(viewer_folder_items())
+	if viewer.tagged_so_far > 0 {
+		viewer_set_status(fmt.tprintf("Tagging complete: %d images tagged", viewer.tagged_so_far))
+	} else {
+		viewer_set_status("Tagging complete: no new tags")
+	}
+	fmt.eprintf("[viewer] tagging complete: %d images tagged\n", viewer.tagged_so_far)
+	viewer.needs_redraw = true
 }
 
 viewer_search_append :: proc(addition: string, maximum: int) {
@@ -390,6 +450,18 @@ viewer_add_folder_bar :: proc(frame: ^framework_ui.Frame, theme: hal_ui.Palette)
 			{right, bar.y+4, 56, chip_height},
 			{kind=.Scan_Folder},
 			hal_ui.control_style(theme, viewer.scanning_root_id == viewer.active_root_id ? .Disabled : .Idle),
+		)
+		right -= 60
+		label = "TAG"
+		if viewer.tagging_root_id == viewer.active_root_id {label = "…"}
+		viewer_control(
+			frame,
+			"tag folder",
+			"recognize and tag every untagged image in this folder",
+			label,
+			{right, bar.y+4, 52, chip_height},
+			{kind=.Tag_Folder},
+			hal_ui.control_style(theme, viewer.tagging_root_id == viewer.active_root_id ? .Disabled : .Idle),
 		)
 	}
 

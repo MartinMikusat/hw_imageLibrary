@@ -4,7 +4,6 @@ import "core:encoding/base64"
 import "core:os"
 import "core:path/filepath"
 import "core:testing"
-import "base:runtime"
 
 // A 1x1 PNG used to create decodable fixture files for folder scans.
 TEST_FOLDER_PNG_BASE64 :: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
@@ -18,13 +17,17 @@ folder_test_write_png :: proc(directory, name: string) -> bool {
 	return os.write_entire_file(path, png) == nil
 }
 
+// folder_test_prepare creates isolated fixture and support directories. The
+// returned paths are owned by the caller and freed by folder_test_cleanup; they
+// must not be temp-allocated, because the enclosing test keeps using them
+// after this proc returns.
 folder_test_prepare :: proc(t: ^testing.T) -> (string, string, bool) {
-	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
-	temp_root, root_error := os.make_directory_temp("", "hw-gallery-folder-test-*", context.temp_allocator)
+	temp_root, root_error := os.make_directory_temp("", "hw-gallery-folder-test-*", context.allocator)
 	if root_error != nil {return "", "", false}
-	temp_support, support_error := os.make_directory_temp("", "hw-gallery-folder-support-*", context.temp_allocator)
+	temp_support, support_error := os.make_directory_temp("", "hw-gallery-folder-support-*", context.allocator)
 	if support_error != nil {
 		_ = os.remove_all(temp_root)
+		delete(temp_root)
 		return "", "", false
 	}
 	return temp_root, temp_support, true
@@ -33,6 +36,8 @@ folder_test_prepare :: proc(t: ^testing.T) -> (string, string, bool) {
 folder_test_cleanup :: proc(root, support: string) {
 	_ = os.remove_all(root)
 	_ = os.remove_all(support)
+	delete(root)
+	delete(support)
 }
 
 folder_test_open_database :: proc(t: ^testing.T, support: string) -> ^SQLite_DB {

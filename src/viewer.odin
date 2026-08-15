@@ -55,6 +55,7 @@ Viewer_Action_Kind :: enum {
 	Source_Folder,
 	Add_Folder,
 	Scan_Folder,
+	Tag_Folder,
 	Remove_Folder,
 	Select_Folder_Image,
 	Copy_To_Folder,
@@ -139,6 +140,9 @@ Viewer_State :: struct {
 	folder_selected:             int,
 	scanning_root_id:            i64,
 	last_scan_step:              time.Tick,
+	tagging_root_id:             i64,
+	last_tag_step:               time.Tick,
+	tagged_so_far:               int,
 	search_query:                string,
 	search_focused:              bool,
 	search_active:               bool,
@@ -562,6 +566,11 @@ viewer_execute_action :: proc(action: Viewer_Action) {
 			viewer.scanning_root_id = viewer.active_root_id
 			viewer.last_scan_step = time.tick_add(time.tick_now(), -400*time.Millisecond)
 			viewer_folder_scan_step()
+			viewer.needs_redraw = true
+		}
+	case .Tag_Folder:
+		if viewer.active_root_id > 0 {
+			viewer_start_tagging(viewer.active_root_id)
 			viewer.needs_redraw = true
 		}
 	case .Remove_Folder:
@@ -1501,6 +1510,10 @@ viewer_on_frame :: proc "c" (self: Id, command: Sel, timer: Id) {
 	if viewer.scanning_root_id > 0 && time.tick_since(viewer.last_scan_step) >= 400*time.Millisecond {
 		viewer.last_scan_step = time.tick_now()
 		viewer_folder_scan_step()
+	}
+	if viewer.tagging_root_id > 0 && time.tick_since(viewer.last_tag_step) >= 400*time.Millisecond {
+		viewer.last_tag_step = time.tick_now()
+		viewer_folder_tag_step()
 	}
 	if viewer.needs_redraw {viewer_render()}
 }

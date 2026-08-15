@@ -30,18 +30,22 @@ extension runs in both Chrome and Brave remain before release; see
 The folder-source backend is implemented: user-selected folders are registered
 with security-scoped bookmarks, scanned in place (recursive or top-level), and
 reconciled against the machine-local index, with full-text search over paths
-and tag columns through the `folder add|add-choose|list|scan|remove|images|search`
-CLI family. The viewer exposes these sources through a source bar (library and
-folder chips, add/scan/remove, search field), folder grids with on-demand
-thumbnails, and a detail panel with open-in-Finder, copy-to-clipboard,
-copy-to-folder, and export actions. The reusable
-[`hw_odin_imageSimilarity`](../hw_odin_imageSimilarity/README.md) library v1 is
-implemented with an Apple Vision feature-print embedder, a pure-Odin
-perceptual-hash prefilter, and a SIMD brute-force similarity index; its work
-queue lives in its own `TODO.md`.
+and tag columns through the `folder add|add-choose|list|scan|tag|remove|images|search`
+CLI family. Recognition runs Apple Vision's classify, animal, and object
+requests over every untagged image behind a pluggable `Tag_Provider` seam and
+writes the resulting keywords into the index's `generated_tags` column (auto-
+started after a scan, or per-folder via TAG). The viewer exposes these sources
+through a source bar (library and folder chips, add/scan/tag/remove, search
+field), folder grids with on-demand thumbnails, and a detail panel with
+open-in-Finder, copy-to-clipboard, copy-to-folder, and export actions. The
+reusable [`hw_odin_imageSimilarity`](../hw_odin_imageSimilarity/README.md)
+library v1 is implemented with an Apple Vision feature-print embedder, a
+pure-Odin perceptual-hash prefilter, and a SIMD brute-force similarity index;
+its work queue lives in its own `TODO.md`.
 
-Remaining: recognition tagging with metadata write-back and the similarity
-wiring in the app. See the consolidated plan for the full scope and gates.
+Remaining: metadata write-back of the generated tags into the image files,
+the similarity wiring in the app, and the remote recognition provider. See
+the consolidated plan for the full scope and gates.
 
 ## Version 1 product boundary
 

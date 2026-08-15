@@ -26,8 +26,10 @@ Local_Settings :: struct {
 	device_id:         string `json:"device_id"`,
 	membership_status: string `json:"membership_status"`,
 	next_sequence:     u64    `json:"next_sequence"`,
-	interface_theme:   string `json:"interface_theme,omitempty"`,
-	allocator:         runtime.Allocator `json:"-"`,
+	interface_theme:       string `json:"interface_theme,omitempty"`,
+	recognition_disabled:  bool   `json:"recognition_disabled,omitempty"`,
+	recognition_confidence: f32   `json:"recognition_confidence,omitempty"`,
+	allocator:             runtime.Allocator `json:"-",`
 }
 
 Local_Settings_Error :: enum {
@@ -105,6 +107,9 @@ local_settings_validate :: proc(value: ^Local_Settings) -> bool {
 	if len(value.interface_theme) > 0 &&
 	   value.interface_theme != "hw-light" &&
 	   value.interface_theme != "hw-dark" {
+		return false
+	}
+	if value.recognition_confidence < 0 || value.recognition_confidence > 1 {
 		return false
 	}
 	return true

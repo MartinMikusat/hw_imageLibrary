@@ -64,6 +64,7 @@ Library_Service_Response :: struct {
 	purges:           [dynamic]Library_Service_Purge  `json:"purges,omitempty"`,
 	folders:          [dynamic]Folder_Service_Root    `json:"folders,omitempty"`,
 	folder_images:    [dynamic]Folder_Index_Image     `json:"folder_images,omitempty"`,
+	tagged:           int                             `json:"tagged,omitempty"`,
 }
 
 library_index_capture_destroy :: proc(
@@ -253,6 +254,49 @@ library_service_folder_scan_step :: proc(
 	folder_scan_state_destroy(scan)
 	unordered_remove(&state.folder_scans, index)
 	return .Complete
+}
+
+// library_service_folder_tag_step runs recognition over one batch of images in
+// a folder root that have no generated tags. It returns how many images were
+// newly tagged and whether another batch remains; failing images are marked so
+// a persistently unclassifiable file cannot stall the run.
+library_service_folder_tag_step :: proc(
+	state: ^Library_Service_State,
+	root_id: i64,
+) -> (more: bool, error: Recognition_Error, tagged: int) {
+	if state == nil || state.database == nil {return false, .Unsupported, 0}
+	if !recognition_enabled() {return false, .Unsupported, 0}
+	provider := tag_provider_default(RECOGNITION_PROVIDER_APPLE_VISION, recognition_confidence())
+	if provider == nil {return false, .Unsupported, 0}
+	defer tag_provider_destroy(provider)
+	candidates, found := folder_tag_candidates(state.database, root_id, RECOGNITION_BATCH_IMAGES)
+	if !found {return false, .Vision_Failed, 0}
+	defer {
+		for &candidate in candidates {folder_index_image_destroy(&candidate)}
+		delete(candidates)
+	}
+	tagged_count := 0
+	for &candidate in candidates {
+		tags, classify_error := tag_provider_classify(provider, candidate.path)
+		if classify_error != .None {
+			_ = folder_image_tag_fail(state.database, root_id, candidate.image_id)
+			continue
+		}
+		generated := generated_tags_string(tags)
+		combined := generated_tags_merge(candidate.generated_tags, generated)
+		image_tags_destroy(tags)
+		delete(tags)
+		delete(generated)
+		if !folder_image_tag_set(state.database, root_id, candidate.image_id, combined) {
+			delete(combined)
+			return false, .Vision_Failed, tagged_count
+		}
+		delete(combined)
+		tagged_count += 1
+	}
+	if !folder_rebuild_fts(state.database, root_id) {return false, .Vision_Failed, tagged_count}
+	// A short batch means the untagged set was exhausted this call.
+	return len(candidates) >= RECOGNITION_BATCH_IMAGES, .None, tagged_count
 }
 
 library_service_set_running :: proc(state: ^Library_Service_State, running: bool) {
@@ -1807,6 +1851,23 @@ library_service_execute :: proc(
 			return library_service_error_response("index_query", "The folder scan could not update the index.")
 		case .Unsupported:
 			return library_service_error_response("unsupported", "The folder contains no supported images.")
+		}
+	case "folder.tag":
+		if request.root_id <= 0 {
+			return library_service_error_response("invalid_root", "The folder root identifier is invalid.")
+		}
+		more, tag_error, tagged := library_service_folder_tag_step(state, request.root_id)
+		if tag_error == .Unsupported {
+			return library_service_error_response("recognition_disabled", "Image recognition is disabled.")
+		}
+		if tag_error != .None {
+			return library_service_error_response("recognition", "Recognition could not update the folder index.")
+		}
+		return {
+			protocol_version = LIBRARY_SERVICE_PROTOCOL_VERSION,
+			ok = true,
+			message = "tagging" if more else "complete",
+			tagged = tagged,
 		}
 	case "folder.images":
 		if request.root_id <= 0 {
