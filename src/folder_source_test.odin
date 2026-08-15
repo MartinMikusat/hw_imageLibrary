@@ -171,6 +171,28 @@ defer folder_test_cleanup(root, support)
 }
 
 @(test)
+folder_scan_uses_security_scoped_bookmark :: proc(t: ^testing.T) {
+	root, support, ok := folder_test_prepare(t)
+	if !ok {testing.fail_now(t, "fixture setup failed")}
+	defer folder_test_cleanup(root, support)
+	database := folder_test_open_database(t, support)
+	defer sqlite3_close(database)
+
+	testing.expect(t, folder_test_write_png(root, "image.png"), "image file")
+	bookmark, bm_error := macos_bookmark_create(root, context.temp_allocator)
+	testing.expectf(t, bm_error == .None, "bookmark creation failed: %v", bm_error)
+	if bm_error != .None {return}
+
+	root_id, added := folder_root_add(database, root, bookmark, true)
+	testing.expect(t, added && root_id > 0, "root with bookmark must register")
+	testing.expect(t, folder_scan_root(database, root_id) == .None, "scan must resolve the bookmark")
+
+	images, _ := folder_image_list(database, root_id)
+	defer folder_index_image_list_destroy(images)
+	testing.expectf(t, len(images) == 1, "one image expected through the bookmark path, got %d", len(images))
+}
+
+@(test)
 folder_thumbnail_key_is_stable_64_hex :: proc(t: ^testing.T) {
 	a := folder_thumbnail_key(5, 123_456, context.temp_allocator)
 	b := folder_thumbnail_key(5, 123_456, context.temp_allocator)

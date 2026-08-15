@@ -45,6 +45,10 @@ viewer_reload_folders :: proc() -> bool {
 
 viewer_reload_folder_images :: proc() -> bool {
 	if viewer.active_root_id <= 0 {return false}
+	selected_path := ""
+	if selected := viewer_selected_folder_image(); selected != nil {
+		selected_path = strings.clone(selected.path, context.temp_allocator)
+	}
 	response, exchanged := library_cli_exchange({
 		protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION,
 		command="folder.images",
@@ -57,6 +61,14 @@ viewer_reload_folder_images :: proc() -> bool {
 	library_service_response_destroy(&viewer.folder_images)
 	viewer.folder_images = response
 	viewer.folder_selected = -1
+	if len(selected_path) > 0 {
+		for image, index in viewer_folder_items() {
+			if image.path == selected_path {viewer.folder_selected = index; break}
+		}
+	}
+	if viewer.folder_selected < 0 && len(viewer_folder_items()) > 0 {
+		viewer.folder_selected = 0
+	}
 	viewer.needs_redraw = true
 	return true
 }
@@ -77,8 +89,15 @@ viewer_activate_folder_source :: proc(root_id: i64) {
 }
 
 viewer_add_folder_source :: proc() {
+	viewer_set_status("Choose an image folder to add…")
 	root_path, bookmark, choose_error := macos_choose_library_root()
-	if choose_error != .None {return}
+	if choose_error != .None {
+		if choose_error != .Cancelled {
+			viewer_set_status("The folder chooser could not be opened.")
+		}
+		return
+	}
+	fmt.eprintf("[viewer] add folder: %s (bookmark %d bytes)\n", root_path, len(bookmark))
 	response, exchanged := library_cli_exchange({
 		protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION,
 		command="folder.add",
@@ -94,26 +113,31 @@ viewer_add_folder_source :: proc() {
 		library_service_response_destroy(&response)
 	} else {
 		if exchanged {
-			viewer_set_status(response.message)
+			viewer_set_status(fmt.tprintf("Could not add the folder: %s", response.message))
+			fmt.eprintf("[viewer] folder.add failed: %s\n", response.message)
 			library_service_response_destroy(&response)
 		} else {
-			viewer_set_status("The library service is unavailable.")
+			viewer_set_status("The library service is unavailable; the folder could not be added.")
+			fmt.eprintln("[viewer] folder.add exchange failed (service unreachable)")
 		}
 		return
 	}
-	viewer_reload_folders()
-	if root_id > 0 {
-		viewer_activate_folder_source(root_id)
-		// Drive the incremental scan from the frame timer so a large folder
-		// cannot stall the service or the UI; results appear as it runs.
-		viewer.scanning_root_id = root_id
-		viewer.last_scan_step = time.tick_add(time.tick_now(), -400*time.Millisecond)
-		viewer_folder_scan_step()
+	if root_id <= 0 {
+		viewer_set_status("The folder could not be registered as a source.")
+		return
 	}
+	fmt.eprintf("[viewer] folder registered as root %d\n", root_id)
+	viewer_reload_folders()
+	viewer_activate_folder_source(root_id)
+	viewer_set_status("Scanning the folder for images…")
+	viewer.scanning_root_id = root_id
+	viewer.last_scan_step = time.tick_add(time.tick_now(), -400*time.Millisecond)
+	viewer_folder_scan_step()
 }
 
 // viewer_folder_scan_step advances the incremental scan for the active root by
-// one batch and refreshes folder data as images are indexed.
+// one batch and refreshes folder data as images are indexed. The status line
+// reports progress; results appear in the grid while the scan runs.
 viewer_folder_scan_step :: proc() {
 	if viewer.scanning_root_id <= 0 {return}
 	response, exchanged := library_cli_exchange({
@@ -121,22 +145,41 @@ viewer_folder_scan_step :: proc() {
 		command="folder.scan",
 		root_id=viewer.scanning_root_id,
 	})
-	done := false
-	if exchanged && response.ok {
-		done = response.message == "complete"
-		if !done {
-			library_service_response_destroy(&response)
-			viewer_reload_folder_images()
-			viewer.needs_redraw = true
-			return
-		}
-	} else if exchanged {
+	if !exchanged {
+		viewer.scanning_root_id = 0
+		viewer_set_status("The library service is unavailable; the folder scan did not run.")
+		fmt.eprintln("[viewer] folder.scan exchange failed (service unreachable)")
+		viewer.needs_redraw = true
+		return
+	}
+	if !response.ok {
+		viewer.scanning_root_id = 0
+		viewer_set_status(fmt.tprintf("The folder scan failed: %s", response.message))
+		fmt.eprintf("[viewer] folder.scan failed: %s\n", response.message)
 		library_service_response_destroy(&response)
+		viewer.needs_redraw = true
+		return
+	}
+	done := response.message == "complete"
+	library_service_response_destroy(&response)
+	if !done {
+		viewer_reload_folder_images()
+		count := len(viewer_folder_items())
+		fmt.eprintf("[viewer] scan step: %d images indexed so far\n", count)
+		if count > 0 {
+			viewer_set_status(fmt.tprintf("Scanning… %d images indexed", count))
+		} else {
+			viewer_set_status("Scanning… no images found yet")
+		}
+		viewer.needs_redraw = true
+		return
 	}
 	viewer.scanning_root_id = 0
 	viewer_reload_folder_images()
 	viewer_reload_folders()
-	viewer_set_status("Folder scan complete.")
+	count := len(viewer_folder_items())
+	viewer_set_status(fmt.tprintf("Scan complete: %d images", count))
+	fmt.eprintf("[viewer] scan complete: %d images\n", count)
 	viewer.needs_redraw = true
 }
 
