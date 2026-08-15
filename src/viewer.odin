@@ -51,11 +51,24 @@ Viewer_Action_Kind :: enum {
 	Set_Theme,
 	Command_Palette,
 	Command_Result,
+	Source_Library,
+	Source_Folder,
+	Add_Folder,
+	Scan_Folder,
+	Remove_Folder,
+	Select_Folder_Image,
+	Copy_To_Folder,
+	Copy_Image,
+	Open_In_Finder,
+	Export_Folder_Image,
+	Focus_Search,
+	Clear_Search,
 }
 
 Viewer_Action :: struct {
-	kind:  Viewer_Action_Kind,
-	index: int,
+	kind:   Viewer_Action_Kind,
+	index:  int,
+	root_id: i64,
 }
 
 Viewer_Action_Binding :: struct {
@@ -91,6 +104,11 @@ Viewer_Confirmation_Kind :: enum {
 	Move_Library,
 }
 
+Viewer_Source_Mode :: enum {
+	Library,
+	Folder,
+}
+
 Viewer_State :: struct {
 	app, window, view, delegate: Id,
 	device, queue, layer:        Id,
@@ -106,6 +124,9 @@ Viewer_State :: struct {
 	captures:                    Library_Service_Response,
 	devices:                     Library_Service_Response,
 	purges:                      Library_Service_Response,
+	roots:                       Library_Service_Response,
+	folder_images:               Library_Service_Response,
+	folder_search:               Library_Service_Response,
 	settings:                    Local_Settings,
 	settings_loaded:             bool,
 	palette:                     command_palette.State,
@@ -113,6 +134,12 @@ Viewer_State :: struct {
 	width, height, scale:        f64,
 	grid_scroll:                 f32,
 	selected:                    int,
+	mode:                        Viewer_Source_Mode,
+	active_root_id:              i64,
+	folder_selected:             int,
+	search_query:                string,
+	search_focused:              bool,
+	search_active:               bool,
 	modal:                       Viewer_Modal,
 	note_buffer:                 string,
 	confirmation_kind:           Viewer_Confirmation_Kind,
@@ -121,6 +148,7 @@ Viewer_State :: struct {
 	status:                      string,
 	needs_redraw:                bool,
 	last_reload:                 time.Tick,
+	last_folder_reload:          time.Tick,
 	reload_started:              bool,
 	loads_this_frame:            int,
 }
@@ -513,6 +541,53 @@ viewer_execute_action :: proc(action: Viewer_Action) {
 			viewer.modal = .None
 			viewer_execute_command(id)
 		}
+	case .Source_Library:
+		viewer_activate_library_source()
+	case .Source_Folder:
+		viewer_activate_folder_source(action.root_id)
+	case .Add_Folder:
+		viewer_add_folder_source()
+	case .Scan_Folder:
+		if viewer.active_root_id > 0 {
+			_ = viewer_mutation({
+				protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION,
+				command="folder.scan",
+				root_id=viewer.active_root_id,
+			}, false)
+			viewer_reload_folders()
+			viewer_reload_folder_images()
+		}
+	case .Remove_Folder:
+		if viewer.active_root_id > 0 {
+			if viewer_mutation({
+				protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION,
+				command="folder.remove",
+				root_id=viewer.active_root_id,
+			}, false) {
+				viewer.active_root_id = 0
+				viewer.mode = .Library
+				viewer_reload_folders()
+				_ = viewer_reload_captures()
+			}
+		}
+	case .Select_Folder_Image:
+		if action.index >= 0 && action.index < len(viewer_folder_items()) {
+			viewer.folder_selected = action.index
+			viewer.needs_redraw = true
+		}
+	case .Copy_To_Folder:
+		viewer_copy_selected_to_folder()
+	case .Copy_Image:
+		viewer_copy_selected_image()
+	case .Open_In_Finder:
+		viewer_reveal_selected_in_finder()
+	case .Export_Folder_Image:
+		viewer_export_selected_folder_image()
+	case .Focus_Search:
+		viewer.search_focused = true
+		viewer.needs_redraw = true
+	case .Clear_Search:
+		viewer_clear_search()
 	case .None:
 	}
 }
@@ -808,7 +883,7 @@ viewer_grid_layout :: proc() -> (rect: framework_draw.Rect, columns: int, tile_w
 		margin,
 		VIEWER_STATUS_HEIGHT+margin,
 		f32(viewer.width)-detail_width-margin*3,
-		f32(viewer.height)-VIEWER_HEADER_HEIGHT-VIEWER_STATUS_HEIGHT-margin*2,
+		f32(viewer.height)-VIEWER_HEADER_HEIGHT-VIEWER_STATUS_HEIGHT-FOLDER_BAR_HEIGHT-margin*2,
 	}
 	columns = max(1, int((rect.w+8)/174))
 	tile_width = (rect.w-f32(columns-1)*8)/f32(columns)
@@ -902,6 +977,10 @@ viewer_detail_field :: proc(
 }
 
 viewer_add_detail :: proc(frame: ^framework_ui.Frame, theme: hal_ui.Palette) {
+	if viewer.mode == .Folder {
+		viewer_add_folder_detail(frame, theme)
+		return
+	}
 	panel := viewer_detail_rect()
 	viewer_box(frame, "detail panel", "", panel, hal_ui.panel_style(theme, true), {.Draw_Background, .Clip})
 	capture := viewer_selected_capture()
@@ -968,7 +1047,11 @@ viewer_add_detail :: proc(frame: ^framework_ui.Frame, theme: hal_ui.Palette) {
 viewer_add_status :: proc(frame: ^framework_ui.Frame, theme: hal_ui.Palette) {
 	text := viewer.status
 	if len(text) == 0 {
-		text = fmt.tprintf("%d CAPTURES", len(viewer.captures.captures))
+		if viewer.mode == .Folder {
+			text = fmt.tprintf("%d IMAGES", len(viewer_folder_items()))
+		} else {
+			text = fmt.tprintf("%d CAPTURES", len(viewer.captures.captures))
+		}
 	}
 	viewer_box(frame, "status background", "", {0, 0, f32(viewer.width), VIEWER_STATUS_HEIGHT}, {background=theme.header, opacity=1}, {.Draw_Background})
 	viewer_add_text(frame, "status text", text, {8, 2, f32(viewer.width)-16, VIEWER_STATUS_HEIGHT-4}, theme.muted, 9)
@@ -1115,7 +1198,12 @@ viewer_build_frame :: proc() -> framework_ui.Frame {
 	theme := viewer_theme()
 	viewer_box(&frame, "canvas", "", {0, 0, f32(viewer.width), f32(viewer.height)}, {background=theme.canvas, opacity=1}, {.Draw_Background})
 	viewer_add_header(&frame, theme)
-	viewer_add_grid(&frame, theme)
+	viewer_add_folder_bar(&frame, theme)
+	if viewer.mode == .Library {
+		viewer_add_grid(&frame, theme)
+	} else {
+		viewer_add_folder_grid(&frame, theme)
+	}
 	viewer_add_detail(&frame, theme)
 	viewer_add_status(&frame, theme)
 	switch viewer.modal {
@@ -1314,12 +1402,55 @@ viewer_on_key_down :: proc "c" (self: Id, command: Sel, event: Id) {
 		if key_code == 53 {viewer_execute_action({kind=.Close_Modal})}
 		return
 	}
+	if viewer.search_focused {
+		switch key_code {
+		case 53:
+			viewer.search_focused = false
+			viewer.needs_redraw = true
+		case 36:
+			viewer.search_focused = false
+			viewer_commit_search()
+		case 51: viewer_search_backspace()
+		case 9:
+			if pasted, pasted_ok := macos_clipboard_string(context.temp_allocator); pasted_ok {
+				viewer_search_append(pasted, 256)
+			}
+		case:
+			characters, converted := nsstring_to_string(msg_id(event, sel_registerName("characters")), context.temp_allocator)
+			if converted && modifiers & VIEWER_COMMAND_MODIFIER == 0 {
+				viewer_search_append(characters, 256)
+			}
+		}
+		viewer.needs_redraw = true
+		return
+	}
 	characters, converted := nsstring_to_string(msg_id(event, sel_registerName("charactersIgnoringModifiers")), context.temp_allocator)
 	if converted && characters == "/" && modifiers & VIEWER_COMMAND_MODIFIER == 0 {
 		viewer_begin_flash()
 		return
 	}
+	if converted && (characters == "s" || characters == "S") && modifiers & VIEWER_COMMAND_MODIFIER != 0 {
+		viewer.search_focused = true
+		viewer.needs_redraw = true
+		return
+	}
 	_, columns, _, _ := viewer_grid_layout()
+	if viewer.mode == .Folder {
+		count := len(viewer_folder_items())
+		switch key_code {
+		case 53:
+			viewer.search_focused = false
+			viewer_clear_search()
+		case 123: viewer.folder_selected = max(0, viewer.folder_selected-1)
+		case 124: viewer.folder_selected = min(count-1, viewer.folder_selected+1)
+		case 125: viewer.folder_selected = min(count-1, viewer.folder_selected+columns)
+		case 126: viewer.folder_selected = max(0, viewer.folder_selected-columns)
+		case 36: viewer_execute_action({kind=.Open_In_Finder})
+		case 51: viewer_execute_action({kind=.Copy_Image})
+		}
+		viewer.needs_redraw = true
+		return
+	}
 	switch key_code {
 	case 53: viewer.modal = .None
 	case 123: viewer.selected = max(0, viewer.selected-1)
@@ -1355,6 +1486,9 @@ viewer_on_frame :: proc "c" (self: Id, command: Sel, timer: Id) {
 	msg_void_size(viewer.layer, sel_registerName("setDrawableSize:"), {viewer.width*viewer.scale, viewer.height*viewer.scale})
 	if !viewer.reload_started || time.tick_since(viewer.last_reload) >= 2*time.Second {
 		_ = viewer_reload_captures()
+	}
+	if !viewer.reload_started || time.tick_since(viewer.last_folder_reload) >= 5*time.Second {
+		viewer_reload_folders()
 	}
 	if viewer.needs_redraw {viewer_render()}
 }
@@ -1462,6 +1596,8 @@ viewer_initialize :: proc() -> bool {
 	}
 	_ = viewer_reload_captures()
 	viewer_reload_settings()
+	viewer_reload_folders()
+	viewer.last_folder_reload = time.tick_now()
 	return true
 }
 
@@ -1475,6 +1611,10 @@ viewer_destroy :: proc() {
 	library_service_response_destroy(&viewer.captures)
 	library_service_response_destroy(&viewer.devices)
 	library_service_response_destroy(&viewer.purges)
+	library_service_response_destroy(&viewer.roots)
+	library_service_response_destroy(&viewer.folder_images)
+	library_service_response_destroy(&viewer.folder_search)
+	delete(viewer.search_query)
 	if viewer.settings_loaded {local_settings_destroy(&viewer.settings)}
 	command_palette.state_destroy(&viewer.palette)
 	flash.state_destroy(&viewer.flash)

@@ -169,3 +169,45 @@ defer folder_test_cleanup(root, support)
 	defer folder_service_root_list_destroy(folders)
 	testing.expectf(t, len(folders) == 0, "no roots should remain, got %d", len(folders))
 }
+
+@(test)
+folder_thumbnail_key_is_stable_64_hex :: proc(t: ^testing.T) {
+	a := folder_thumbnail_key(5, 123_456, context.temp_allocator)
+	b := folder_thumbnail_key(5, 123_456, context.temp_allocator)
+	c := folder_thumbnail_key(5, 999_999, context.temp_allocator)
+	testing.expect(t, library_digest_valid(a), "thumbnail key must be a 64-hex digest")
+	testing.expect(t, a == b, "thumbnail key must be deterministic")
+	testing.expect(t, a != c, "thumbnail key must change with the file mtime")
+}
+
+@(test)
+folder_thumbnail_generates_for_scanned_image :: proc(t: ^testing.T) {
+	root, support, ok := folder_test_prepare(t)
+	if !ok {testing.fail_now(t, "fixture setup failed")}
+	defer folder_test_cleanup(root, support)
+	database := folder_test_open_database(t, support)
+	defer sqlite3_close(database)
+
+	testing.expect(t, folder_test_write_png(root, "image.png"), "image file")
+	root_id, _ := folder_root_add(database, root, "", true)
+	testing.expect(t, folder_scan_root(database, root_id) == .None, "scan must succeed")
+
+	images, _ := folder_image_list(database, root_id)
+	defer folder_index_image_list_destroy(images)
+	testing.expect(t, len(images) == 1, "one image expected")
+	if len(images) == 0 {return}
+
+	key := folder_thumbnail_key(images[0].image_id, images[0].modified_unix_ms, context.temp_allocator)
+	thumbnail, thumbnail_error := macos_thumbnail_cache_create(
+		images[0].path,
+		support,
+		key,
+		128,
+		context.allocator,
+	)
+	defer delete(thumbnail, context.allocator)
+	testing.expectf(t, thumbnail_error == .None, "folder thumbnail must generate, got %v", thumbnail_error)
+	if thumbnail_error == .None {
+		testing.expect(t, os.exists(thumbnail), "thumbnail file must exist on disk")
+	}
+}

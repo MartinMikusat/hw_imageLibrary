@@ -28,6 +28,7 @@ Library_Service_Request :: struct {
 	root_id:          i64    `json:"root_id,omitempty"`,
 	recursive:        bool   `json:"recursive,omitempty"`,
 	bookmark:         string `json:"bookmark,omitempty"`,
+	image_id:         i64    `json:"image_id,omitempty"`,
 }
 
 Library_Service_Device :: struct {
@@ -1729,6 +1730,39 @@ library_service_execute :: proc(
 			protocol_version = LIBRARY_SERVICE_PROTOCOL_VERSION,
 			ok = true,
 			folder_images = images,
+		}
+	case "folder.thumbnail":
+		if request.root_id <= 0 || request.image_id <= 0 {
+			return library_service_error_response("invalid_root", "The folder image identifier is invalid.")
+		}
+		if request.maximum_pixels < 32 || request.maximum_pixels > 4096 {
+			return library_service_error_response("invalid_size", "The thumbnail size must be between 32 and 4096 pixels.")
+		}
+		image, found := folder_image_get(
+			state.database,
+			request.root_id,
+			request.image_id,
+			context.temp_allocator,
+		)
+		if !found {
+			return library_service_error_response("not_found", "The folder image was not found.")
+		}
+		defer folder_index_image_destroy(&image, context.temp_allocator)
+		key := folder_thumbnail_key(request.image_id, image.modified_unix_ms, context.temp_allocator)
+		thumbnail_path, thumbnail_error := macos_thumbnail_cache_create(
+			image.path,
+			state.support_path,
+			key,
+			request.maximum_pixels,
+			allocator,
+		)
+		if thumbnail_error != .None {
+			return library_service_error_response("thumbnail", "The folder thumbnail could not be generated.")
+		}
+		return {
+			protocol_version = LIBRARY_SERVICE_PROTOCOL_VERSION,
+			ok = true,
+			message = thumbnail_path,
 		}
 	case "library.ack":
 		return library_service_publish_ack(state)

@@ -5,6 +5,8 @@ import "core:os"
 import "core:path/filepath"
 import "core:strings"
 import "core:time"
+import "core:crypto/sha2"
+import "core:encoding/hex"
 
 FOLDER_INDEX_SCHEMA_VERSION :: 1
 
@@ -302,6 +304,51 @@ folder_read_images :: proc(
 		append(&result, image)
 	}
 	return result, true
+}
+
+// folder_image_get loads one folder image row by its primary key.
+folder_image_get :: proc(
+	database: ^SQLite_DB,
+	root_id, image_id: i64,
+	allocator := context.allocator,
+) -> (Folder_Index_Image, bool) {
+	statement, prepared := sqlite_prepare(database, `
+SELECT root_id, image_id, path, media_type, size_bytes, modified_unix_ms,
+       pixel_width, pixel_height, tags, generated_tags
+FROM folder_images
+WHERE root_id = ? AND image_id = ?;
+`)
+	if !prepared {return {}, false}
+	defer sqlite3_finalize(statement)
+	if !sqlite_bind_i64_value(statement, 1, root_id) ||
+	   !sqlite_bind_i64_value(statement, 2, image_id) {return {}, false}
+	if sqlite3_step(statement) != SQLITE_ROW {return {}, false}
+	image := Folder_Index_Image{
+		root_id = i64(sqlite3_column_int64(statement, 0)),
+		image_id = i64(sqlite3_column_int64(statement, 1)),
+		path = sqlite_column_string(statement, 2, allocator),
+		media_type = sqlite_column_string(statement, 3, allocator),
+		size_bytes = i64(sqlite3_column_int64(statement, 4)),
+		modified_unix_ms = i64(sqlite3_column_int64(statement, 5)),
+		pixel_width = int(sqlite3_column_int(statement, 6)),
+		pixel_height = int(sqlite3_column_int(statement, 7)),
+		tags = sqlite_column_string(statement, 8, allocator),
+		generated_tags = sqlite_column_string(statement, 9, allocator),
+	}
+	return image, true
+}
+
+// folder_thumbnail_key produces a 64-hex cache key for a folder image so the
+// thumbnail cache path remains valid and regenerates when the file changes.
+folder_thumbnail_key :: proc(image_id, modified_unix_ms: i64, allocator := context.allocator) -> string {
+	context_256: sha2.Context_256
+	sha2.init_256(&context_256)
+	sha2.update(&context_256, transmute([]u8)fmt.tprintf("folder:%d:%d", image_id, modified_unix_ms))
+	digest: [sha2.DIGEST_SIZE_256]u8
+	sha2.final(&context_256, digest[:])
+	encoded, encode_error := hex.encode(digest[:], allocator)
+	if encode_error != nil {return ""}
+	return string(encoded)
 }
 
 folder_scan_root :: proc(database: ^SQLite_DB, root_id: i64) -> Folder_Scan_Error {

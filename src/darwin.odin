@@ -110,6 +110,11 @@ msg_bool_id :: proc(receiver: Id, selector: Sel, value: Id) -> bool {
 	return p(receiver, selector, value)
 }
 
+msg_bool_id_id :: proc(receiver: Id, selector: Sel, first, second: Id) -> bool {
+	p := transmute(proc "c" (Id, Sel, Id, Id) -> bool)objc_send_address
+	return p(receiver, selector, first, second)
+}
+
 msg_int :: proc(receiver: Id, selector: Sel) -> int {
 	p := transmute(proc "c" (Id, Sel) -> int)objc_send_address
 	return p(receiver, selector)
