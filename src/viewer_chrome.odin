@@ -1,6 +1,7 @@
 package main
 
 import "core:fmt"
+import "core:math"
 import framework_draw "ui_framework:draw"
 import framework_ui "ui_framework:core"
 import hal_ui "ui_framework:hal_wayland"
@@ -68,6 +69,56 @@ viewer_icon_map_point :: proc(rect: framework_draw.Rect, x, y: f32) -> [2]f32 {
 	return {rect.x+x*rect.w/24, rect.y+(24-y)*rect.h/24}
 }
 
+viewer_draw_icon_line :: proc(
+	list: ^framework_draw.List,
+	from, to: [2]f32,
+	color: framework_draw.Color,
+	thickness: f32,
+) {
+	dx, dy := to[0]-from[0], to[1]-from[1]
+	length := math.sqrt(dx*dx+dy*dy)
+	if length <= 0 {return}
+	angle := math.atan2(dy, dx)
+	framework_draw.push_transform(
+		list,
+		{
+			math.cos(angle),
+			math.sin(angle),
+			-math.sin(angle),
+			math.cos(angle),
+			from[0],
+			from[1],
+		},
+	)
+	framework_draw.solid(list, {0, -thickness/2, length, thickness}, color, thickness/2)
+	framework_draw.pop_transform(list)
+}
+
+viewer_draw_icon_cubic :: proc(
+	list: ^framework_draw.List,
+	from, control_1, control_2, to: [2]f32,
+	color: framework_draw.Color,
+	thickness: f32,
+) {
+	previous := from
+	for index in 1..=12 {
+		t := f32(index)/12
+		inverse := 1-t
+		next := [2]f32{
+			inverse*inverse*inverse*from[0]+
+			3*inverse*inverse*t*control_1[0]+
+			3*inverse*t*t*control_2[0]+
+			t*t*t*to[0],
+			inverse*inverse*inverse*from[1]+
+			3*inverse*inverse*t*control_1[1]+
+			3*inverse*t*t*control_2[1]+
+			t*t*t*to[1],
+		}
+		viewer_draw_icon_line(list, previous, next, color, thickness)
+		previous = next
+	}
+}
+
 viewer_draw_iconoir_stroke :: proc(
 	list: ^framework_draw.List,
 	rect: framework_draw.Rect,
@@ -76,16 +127,19 @@ viewer_draw_iconoir_stroke :: proc(
 ) {
 	if list == nil || len(points) == 0 {return}
 	thickness := 1.5*min(rect.w, rect.h)/24
-	framework_draw.path_begin(list)
+	previous: [2]f32
+	has_previous := false
 	for command in points {
 		mapped := viewer_icon_map_point(rect, command.point[0], command.point[1])
 		if command.move {
-			framework_draw.path_move_to(list, mapped[0], mapped[1])
-		} else {
-			framework_draw.path_line_to(list, mapped[0], mapped[1])
+			previous = mapped
+			has_previous = true
+			continue
 		}
+		if has_previous {viewer_draw_icon_line(list, previous, mapped, color, thickness)}
+		previous = mapped
+		has_previous = true
 	}
-	framework_draw.path_stroke(list, color, thickness, .Round, .Round, label="iconoir")
 }
 
 viewer_draw_settings_icon :: proc(
@@ -95,9 +149,7 @@ viewer_draw_settings_icon :: proc(
 ) {
 	if list == nil {return}
 	thickness := 1.5*min(rect.w, rect.h)/24
-	framework_draw.path_begin(list)
-	start := viewer_icon_map_point(rect, 12, 15)
-	framework_draw.path_move_to(list, start[0], start[1])
+	previous := viewer_icon_map_point(rect, 12, 15)
 	inner := [4][3][2]f32{
 		{{13.6569, 15}, {15, 13.6569}, {15, 12}},
 		{{15, 10.3431}, {13.6569, 9}, {12, 9}},
@@ -105,12 +157,12 @@ viewer_draw_settings_icon :: proc(
 		{{9, 13.6569}, {10.3431, 15}, {12, 15}},
 	}
 	for curve in inner {
-		c1 := viewer_icon_map_point(rect, curve[0][0], curve[0][1])
-		c2 := viewer_icon_map_point(rect, curve[1][0], curve[1][1])
-		to := viewer_icon_map_point(rect, curve[2][0], curve[2][1])
-		framework_draw.path_cubic_to(list, c1[0], c1[1], c2[0], c2[1], to[0], to[1])
+		control_1 := viewer_icon_map_point(rect, curve[0][0], curve[0][1])
+		control_2 := viewer_icon_map_point(rect, curve[1][0], curve[1][1])
+		next := viewer_icon_map_point(rect, curve[2][0], curve[2][1])
+		viewer_draw_icon_cubic(list, previous, control_1, control_2, next, color, thickness)
+		previous = next
 	}
-	framework_draw.path_close(list)
 	gear := [30][2]f32{
 		{19.6224, 10.3954}, {18.5247, 7.7448}, {20, 6}, {18, 4},
 		{16.2647, 5.48295}, {13.5578, 4.36974}, {12.9353, 2}, {10.981, 2},
@@ -121,24 +173,32 @@ viewer_draw_settings_icon :: proc(
 		{13.6045, 19.6132}, {16.2551, 18.5155}, {18.5159, 16.2494},
 		{19.6139, 13.598}, {21.9999, 12.9772}, {22, 11},
 	}
-	first := viewer_icon_map_point(rect, gear[0][0], gear[0][1])
-	framework_draw.path_move_to(list, first[0], first[1])
+	previous = viewer_icon_map_point(rect, gear[0][0], gear[0][1])
 	for index in 1..<26 {
-		p := viewer_icon_map_point(rect, gear[index][0], gear[index][1])
-		framework_draw.path_line_to(list, p[0], p[1])
+		next := viewer_icon_map_point(rect, gear[index][0], gear[index][1])
+		viewer_draw_icon_line(list, previous, next, color, thickness)
+		previous = next
 	}
-	c1 := viewer_icon_map_point(rect, 16.6969, 18.8313)
-	c2 := viewer_icon_map_point(rect, 18, 20)
-	to := viewer_icon_map_point(rect, 18, 20)
-	framework_draw.path_cubic_to(list, c1[0], c1[1], c2[0], c2[1], to[0], to[1])
-	p := viewer_icon_map_point(rect, 20, 18)
-	framework_draw.path_line_to(list, p[0], p[1])
+	control_1 := viewer_icon_map_point(rect, 16.6969, 18.8313)
+	control_2 := viewer_icon_map_point(rect, 18, 20)
+	next := viewer_icon_map_point(rect, 18, 20)
+	viewer_draw_icon_cubic(list, previous, control_1, control_2, next, color, thickness)
+	previous = next
+	next = viewer_icon_map_point(rect, 20, 18)
+	viewer_draw_icon_line(list, previous, next, color, thickness)
+	previous = next
 	for index in 26..<len(gear) {
-		p = viewer_icon_map_point(rect, gear[index][0], gear[index][1])
-		framework_draw.path_line_to(list, p[0], p[1])
+		next = viewer_icon_map_point(rect, gear[index][0], gear[index][1])
+		viewer_draw_icon_line(list, previous, next, color, thickness)
+		previous = next
 	}
-	framework_draw.path_close(list)
-	framework_draw.path_stroke(list, color, thickness, .Round, .Round, label="settings")
+	viewer_draw_icon_line(
+		list,
+		previous,
+		viewer_icon_map_point(rect, gear[0][0], gear[0][1]),
+		color,
+		thickness,
+	)
 }
 
 viewer_draw_xmark_icon :: proc(user_data: rawptr, list: ^framework_draw.List, rect: framework_draw.Rect) {
