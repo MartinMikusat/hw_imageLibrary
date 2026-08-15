@@ -25,6 +25,9 @@ Library_Service_Request :: struct {
 	object_digest:    string `json:"object_digest,omitempty"`,
 	maximum_pixels:   int    `json:"maximum_pixels,omitempty"`,
 	include_deleted:  bool   `json:"include_deleted,omitempty"`,
+	root_id:          i64    `json:"root_id,omitempty"`,
+	recursive:        bool   `json:"recursive,omitempty"`,
+	bookmark:         string `json:"bookmark,omitempty"`,
 }
 
 Library_Service_Device :: struct {
@@ -58,6 +61,8 @@ Library_Service_Response :: struct {
 	devices:          [dynamic]Library_Service_Device `json:"devices,omitempty"`,
 	issue_count:      int                             `json:"issue_count,omitempty"`,
 	purges:           [dynamic]Library_Service_Purge  `json:"purges,omitempty"`,
+	folders:          [dynamic]Folder_Service_Root    `json:"folders,omitempty"`,
+	folder_images:    [dynamic]Folder_Index_Image     `json:"folder_images,omitempty"`,
 }
 
 library_index_capture_destroy :: proc(
@@ -103,6 +108,10 @@ library_service_response_destroy :: proc(
 		delete(purge.commit_event_id, allocator)
 	}
 	delete(value.purges)
+	for &folder in value.folders {folder_service_root_destroy(&folder, allocator)}
+	delete(value.folders)
+	for &image in value.folder_images {folder_index_image_destroy(&image, allocator)}
+	delete(value.folder_images)
 	value^ = {}
 }
 
@@ -1647,6 +1656,80 @@ library_service_execute :: proc(
 			if !last_response.ok {return last_response}
 		}
 		return last_response
+	case "folder.add":
+		if len(request.path) == 0 || !filepath.is_abs(request.path) {
+			return library_service_error_response("invalid_path", "The folder path must be absolute.")
+		}
+		root_id, added := folder_root_add(
+			state.database,
+			request.path,
+			request.bookmark,
+			request.recursive,
+		)
+		if !added {
+			return library_service_error_response("folder_add", "The folder source could not be registered.")
+		}
+		return {
+			protocol_version = LIBRARY_SERVICE_PROTOCOL_VERSION,
+			ok = true,
+			message = fmt.tprintf("%d", root_id),
+		}
+	case "folder.list":
+		folders, listed := folder_root_list(state.database, allocator)
+		if !listed {return library_service_error_response("index_query", "Folder listing failed.")}
+		return {
+			protocol_version = LIBRARY_SERVICE_PROTOCOL_VERSION,
+			ok = true,
+			folders = folders,
+		}
+	case "folder.remove":
+		if request.root_id <= 0 {
+			return library_service_error_response("invalid_root", "The folder root identifier is invalid.")
+		}
+		if !folder_root_remove(state.database, request.root_id) {
+			return library_service_error_response("folder_remove", "The folder source could not be removed.")
+		}
+		return {protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION, ok=true}
+	case "folder.scan":
+		if request.root_id <= 0 {
+			return library_service_error_response("invalid_root", "The folder root identifier is invalid.")
+		}
+		switch folder_scan_root(state.database, request.root_id) {
+		case .None:
+			return {protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION, ok=true}
+		case .Bookmark:
+			return library_service_error_response("bookmark", "The folder bookmark could not be resolved.")
+		case .Invalid_Root:
+			return library_service_error_response("invalid_root", "The folder root no longer exists.")
+		case .Open, .Read:
+			return library_service_error_response("folder_unreadable", "The folder could not be read.")
+		case .Index:
+			return library_service_error_response("index_query", "The folder scan could not update the index.")
+		case .Unsupported:
+			return library_service_error_response("unsupported", "The folder contains no supported images.")
+		}
+	case "folder.images":
+		if request.root_id <= 0 {
+			return library_service_error_response("invalid_root", "The folder root identifier is invalid.")
+		}
+		images, listed := folder_image_list(state.database, request.root_id, allocator)
+		if !listed {return library_service_error_response("index_query", "Folder image listing failed.")}
+		return {
+			protocol_version = LIBRARY_SERVICE_PROTOCOL_VERSION,
+			ok = true,
+			folder_images = images,
+		}
+	case "folder.search":
+		if len(request.text) == 0 || len(request.text) > 4096 {
+			return library_service_error_response("invalid_query", "Search text must contain 1 to 4096 bytes.")
+		}
+		images, searched := folder_image_search(state.database, request.text, allocator)
+		if !searched {return library_service_error_response("index_query", "Folder search failed.")}
+		return {
+			protocol_version = LIBRARY_SERVICE_PROTOCOL_VERSION,
+			ok = true,
+			folder_images = images,
+		}
 	case "library.ack":
 		return library_service_publish_ack(state)
 	case "library.device-authorize":

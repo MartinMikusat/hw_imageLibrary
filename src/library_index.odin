@@ -111,6 +111,7 @@ Library_Index_Capture :: struct {
 
 library_index_create_schema :: proc(database: ^SQLite_DB) -> bool {
 	if !sqlite_execute(database, LIBRARY_INDEX_SCHEMA) {return false}
+	if !folder_index_create_schema(database) {return false}
 	return sqlite_execute(
 		database,
 		fmt.tprintf(

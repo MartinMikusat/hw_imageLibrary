@@ -291,6 +291,49 @@ library_cli_parse_request :: proc(
 		}
 		return request, true
 	}
+	if args[0] == "folder" {
+		switch args[1] {
+		case "add":
+			if len(args) < 3 {return {}, false}
+			request.command = "folder.add"
+			request.path = args[2]
+			request.recursive = true
+			if len(args) >= 4 && args[3] == "--flat" {request.recursive = false}
+		case "add-choose":
+			if len(args) != 2 {return {}, false}
+			path, bookmark, choose_error := macos_choose_library_root(context.temp_allocator)
+			if choose_error != .None {return {}, false}
+			request.command = "folder.add"
+			request.path = path
+			request.bookmark = bookmark
+			request.recursive = true
+		case "list":
+			if len(args) != 2 {return {}, false}
+			request.command = "folder.list"
+		case "scan":
+			if len(args) != 3 {return {}, false}
+			root_id, parsed := strconv.parse_i64(args[2])
+			if !parsed {return {}, false}
+			request.command, request.root_id = "folder.scan", root_id
+		case "remove":
+			if len(args) != 3 {return {}, false}
+			root_id, parsed := strconv.parse_i64(args[2])
+			if !parsed {return {}, false}
+			request.command, request.root_id = "folder.remove", root_id
+		case "images":
+			if len(args) != 3 {return {}, false}
+			root_id, parsed := strconv.parse_i64(args[2])
+			if !parsed {return {}, false}
+			request.command, request.root_id = "folder.images", root_id
+		case "search":
+			if len(args) < 3 {return {}, false}
+			request.command = "folder.search"
+			request.text = strings.join(args[2:], " ", context.temp_allocator)
+		case:
+			return {}, false
+		}
+		return request, true
+	}
 	if args[0] == "library" {
 		switch args[1] {
 		case "devices":
@@ -339,7 +382,7 @@ library_cli_run :: proc(args: []string) -> int {
 	if !parsed {
 		return library_cli_error(
 			"usage",
-			"Usage: capture <list|show|search|open-source|export|delete|restore|note-set|thumbnail> ... or library <devices|ack|device-authorize|device-retire|purge-status|purge|move|rebuild> ...",
+			"Usage: capture <list|show|search|open-source|export|delete|restore|note-set|thumbnail> ... or folder <add|add-choose|list|scan|remove|images|search> ... or library <devices|ack|device-authorize|device-retire|purge-status|purge|move|rebuild> ...",
 		)
 	}
 	if request.command == "capture.open-source" {
