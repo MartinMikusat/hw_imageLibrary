@@ -6,7 +6,8 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; }
+html, body { width: 420px; min-height: 140px; }
+body { max-height: 600px; margin: 0; overflow-y: auto; }
 main { padding: 18px; }
 
 header {
