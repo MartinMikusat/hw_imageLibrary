@@ -181,6 +181,78 @@ folder_thumbnail_key_is_stable_64_hex :: proc(t: ^testing.T) {
 }
 
 @(test)
+folder_incremental_scan_completes_and_skips_junk :: proc(t: ^testing.T) {
+	root, support, ok := folder_test_prepare(t)
+	if !ok {testing.fail_now(t, "fixture setup failed")}
+	defer folder_test_cleanup(root, support)
+	database := folder_test_open_database(t, support)
+	defer sqlite3_close(database)
+
+	testing.expect(t, folder_test_write_png(root, "image.png"), "image file")
+	junk_dir, _ := filepath.join([]string{root, "node_modules"})
+	defer delete(junk_dir)
+	_ = os.make_directory(junk_dir)
+	testing.expect(t, folder_test_write_png(junk_dir, "dependency-icon.png"), "junk image")
+	root_id, _ := folder_root_add(database, root, "", true)
+
+	state: Folder_Scan_State
+	defer folder_scan_state_destroy(&state)
+	testing.expect(
+		t,
+		folder_scan_state_start(&state, root_id, root, "", true) == .None,
+		"scan state must start",
+	)
+
+	// Drive the scan in tiny batches; each step must stay well under the
+	// one-second client deadline by construction, and the walk must complete.
+	steps := 0
+	for {
+		more, step_error := folder_scan_step(database, &state, 2)
+		testing.expectf(t, step_error == .None, "scan step must succeed, got %v", step_error)
+		steps += 1
+		if !more {break}
+		if steps > 1000 {testing.fail_now(t, "scan did not terminate")}
+	}
+	testing.expectf(t, steps >= 1, "incremental scan ran %d steps", steps)
+
+	images, _ := folder_image_list(database, root_id)
+	defer folder_index_image_list_destroy(images)
+	testing.expectf(t, len(images) == 1, "junk directory must be skipped, got %d images", len(images))
+	if len(images) == 1 {
+		testing.expect(t, filepath.base(images[0].path) == "image.png", "only the real image is indexed")
+	}
+}
+
+@(test)
+folder_incremental_scan_reconciles_at_finalize :: proc(t: ^testing.T) {
+	root, support, ok := folder_test_prepare(t)
+	if !ok {testing.fail_now(t, "fixture setup failed")}
+	defer folder_test_cleanup(root, support)
+	database := folder_test_open_database(t, support)
+	defer sqlite3_close(database)
+
+	testing.expect(t, folder_test_write_png(root, "stale.png"), "image to remove")
+	root_id, _ := folder_root_add(database, root, "", true)
+	testing.expect(t, folder_scan_root(database, root_id) == .None, "initial scan must succeed")
+	stale_path, _ := filepath.join([]string{root, "stale.png"})
+	defer delete(stale_path)
+	testing.expect(t, os.remove(stale_path) == nil, "remove the image")
+
+	state: Folder_Scan_State
+	defer folder_scan_state_destroy(&state)
+	testing.expect(t, folder_scan_state_start(&state, root_id, root, "", true) == .None, "scan state must start")
+	for {
+		more, step_error := folder_scan_step(database, &state, 8)
+		testing.expect(t, step_error == .None, "scan step must succeed")
+		if !more {break}
+	}
+
+	images, _ := folder_image_list(database, root_id)
+	defer folder_index_image_list_destroy(images)
+	testing.expectf(t, len(images) == 0, "stale image must be reconciled away, got %d", len(images))
+}
+
+@(test)
 folder_thumbnail_generates_for_scanned_image :: proc(t: ^testing.T) {
 	root, support, ok := folder_test_prepare(t)
 	if !ok {testing.fail_now(t, "fixture setup failed")}

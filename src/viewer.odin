@@ -137,6 +137,8 @@ Viewer_State :: struct {
 	mode:                        Viewer_Source_Mode,
 	active_root_id:              i64,
 	folder_selected:             int,
+	scanning_root_id:            i64,
+	last_scan_step:              time.Tick,
 	search_query:                string,
 	search_focused:              bool,
 	search_active:               bool,
@@ -553,13 +555,10 @@ viewer_execute_action :: proc(action: Viewer_Action) {
 		viewer_add_folder_source()
 	case .Scan_Folder:
 		if viewer.active_root_id > 0 {
-			_ = viewer_mutation({
-				protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION,
-				command="folder.scan",
-				root_id=viewer.active_root_id,
-			}, false)
-			viewer_reload_folders()
-			viewer_reload_folder_images()
+			viewer.scanning_root_id = viewer.active_root_id
+			viewer.last_scan_step = time.tick_add(time.tick_now(), -400*time.Millisecond)
+			viewer_folder_scan_step()
+			viewer.needs_redraw = true
 		}
 	case .Remove_Folder:
 		if viewer.active_root_id > 0 {
@@ -1494,6 +1493,10 @@ viewer_on_frame :: proc "c" (self: Id, command: Sel, timer: Id) {
 	// attempts are cheap when the service cannot run at all.
 	if !viewer.reload_started || time.tick_since(viewer.last_reload) >= viewer_reload_interval() {
 		_ = viewer_reload_captures()
+	}
+	if viewer.scanning_root_id > 0 && time.tick_since(viewer.last_scan_step) >= 400*time.Millisecond {
+		viewer.last_scan_step = time.tick_now()
+		viewer_folder_scan_step()
 	}
 	if viewer.needs_redraw {viewer_render()}
 }

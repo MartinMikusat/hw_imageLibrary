@@ -142,6 +142,7 @@ Library_Service_State :: struct {
 	periodic_scan_started: bool,
 	file_presenter: MacOS_File_Presenter,
 	transfers:     [dynamic]Native_Transfer,
+	folder_scans:  [dynamic]Folder_Scan_State,
 }
 
 Library_Service_Error :: enum {
@@ -213,6 +214,43 @@ library_service_database_path :: proc(
 	allocator := context.allocator,
 ) -> (string, bool) {
 	return library_join([]string{support_path, "index-v1.sqlite3"}, allocator)
+}
+
+// library_service_folder_scan_step advances the incremental scan for one
+// folder root. It returns .Complete when the scan finished this call and .None
+// while batches remain; the caller reports those as complete or scanning.
+library_service_folder_scan_step :: proc(
+	state: ^Library_Service_State,
+	root_id: i64,
+) -> Folder_Scan_Error {
+	if state == nil || state.database == nil {return .Invalid_Root}
+	index := -1
+	for &scan, i in state.folder_scans {
+		if scan.root_id == root_id {index = i; break}
+	}
+	if index < 0 {
+		path, bookmark_base64, recursive, found := folder_root_get(state.database, root_id)
+		defer delete(path)
+		defer delete(bookmark_base64)
+		if !found || len(path) == 0 {return .Invalid_Root}
+		scan: Folder_Scan_State
+		if start_error := folder_scan_state_start(&scan, root_id, path, bookmark_base64, recursive); start_error != .None {
+			return start_error
+		}
+		append(&state.folder_scans, scan)
+		index = len(state.folder_scans)-1
+	}
+	scan := &state.folder_scans[index]
+	more, step_error := folder_scan_step(state.database, scan, FOLDER_SCAN_BATCH_FILES)
+	if step_error != .None {
+		folder_scan_state_destroy(scan)
+		unordered_remove(&state.folder_scans, index)
+		return step_error
+	}
+	if more {return .None}
+	folder_scan_state_destroy(scan)
+	unordered_remove(&state.folder_scans, index)
+	return .Complete
 }
 
 library_service_set_running :: proc(state: ^Library_Service_State, running: bool) {
@@ -369,6 +407,8 @@ library_service_destroy :: proc(state: ^Library_Service_State) {
 	}
 	macos_bookmark_resolution_close(&state.bookmark_resolution)
 	native_ingestion_destroy(state)
+	for &scan in state.folder_scans {folder_scan_state_destroy(&scan)}
+	delete(state.folder_scans)
 	library_root_destroy(&state.root)
 	local_command.owner_lock_release(&state.owner_lock)
 	delete(state.support_path)
@@ -1695,9 +1735,19 @@ library_service_execute :: proc(
 		if request.root_id <= 0 {
 			return library_service_error_response("invalid_root", "The folder root identifier is invalid.")
 		}
-		switch folder_scan_root(state.database, request.root_id) {
+		switch library_service_folder_scan_step(state, request.root_id) {
 		case .None:
-			return {protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION, ok=true}
+			return {
+				protocol_version = LIBRARY_SERVICE_PROTOCOL_VERSION,
+				ok = true,
+				message = "scanning",
+			}
+		case .Complete:
+			return {
+				protocol_version = LIBRARY_SERVICE_PROTOCOL_VERSION,
+				ok = true,
+				message = "complete",
+			}
 		case .Bookmark:
 			return library_service_error_response("bookmark", "The folder bookmark could not be resolved.")
 		case .Invalid_Root:

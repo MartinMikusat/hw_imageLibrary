@@ -70,6 +70,7 @@ Folder_Index_Image :: struct {
 
 Folder_Scan_Error :: enum {
 	None,
+	Complete,
 	Invalid_Root,
 	Bookmark,
 	Open,
@@ -82,11 +83,28 @@ FOLDER_IMAGE_EXTENSIONS :: []string{
 	"jpg", "jpeg", "png", "heic", "heif", "webp", "gif", "tif", "tiff", "avif",
 }
 
+// FOLDER_SCAN_SKIP_DIRECTORIES lists directory names that never contain
+// library-relevant images. Walking these (node_modules, build trees, caches)
+// makes scans slow and pollutes the index with dependency artwork.
+FOLDER_SCAN_SKIP_DIRECTORIES :: []string{"node_modules", "build", ".cache", "__pycache__"}
+
+// FOLDER_SCAN_BATCH_FILES bounds how many image files one incremental scan
+// step processes, keeping each service exchange well under the client's
+// one-second request deadline.
+FOLDER_SCAN_BATCH_FILES :: 128
+
 folder_image_supported :: proc(path: string) -> bool {
 	extension := strings.to_lower(filepath.ext(path), context.temp_allocator)
 	extension = strings.trim_prefix(extension, ".")
 	for supported in FOLDER_IMAGE_EXTENSIONS {
 		if extension == supported {return true}
+	}
+	return false
+}
+
+folder_scan_skip_directory :: proc(name: string) -> bool {
+	for skipped in FOLDER_SCAN_SKIP_DIRECTORIES {
+		if name == skipped {return true}
 	}
 	return false
 }
@@ -351,120 +369,198 @@ folder_thumbnail_key :: proc(image_id, modified_unix_ms: i64, allocator := conte
 	return string(encoded)
 }
 
-folder_scan_root :: proc(database: ^SQLite_DB, root_id: i64) -> Folder_Scan_Error {
-	if database == nil {return .Invalid_Root}
-	path, bookmark_base64, recursive, found := folder_root_get(database, root_id)
-	defer delete(path)
-	defer delete(bookmark_base64)
-	if !found || len(path) == 0 {return .Invalid_Root}
+// Folder_Scan_State carries one in-progress incremental scan. It lives in the
+// service so a large folder can be walked in bounded batches without blocking
+// every other command, and so the app can drive the scan to completion while
+// showing incremental results.
+Folder_Scan_State :: struct {
+	root_id:         i64,
+	recursive:       bool,
+	scan_path:       string, // owned resolved root
+	directory_stack: [dynamic]string,
+	seen:            map[string]bool, // owned paths indexed this scan
+	finished:        bool,
+}
 
+folder_scan_state_destroy :: proc(state: ^Folder_Scan_State) {
+	if state == nil {return}
+	delete(state.scan_path)
+	delete_strings(state.directory_stack[:])
+	for path in state.seen {delete(path)}
+	delete(state.seen)
+	state^ = {}
+}
+
+// folder_scan_state_start resolves the folder root (falling back to the stored
+// path when the bookmark is stale, since the process reads paths directly) and
+// seeds the walk.
+folder_scan_state_start :: proc(
+	state: ^Folder_Scan_State,
+	root_id: i64,
+	path, bookmark_base64: string,
+	recursive: bool,
+) -> Folder_Scan_Error {
+	if state == nil || len(path) == 0 {return .Invalid_Root}
 	scan_path := path
 	if len(bookmark_base64) > 0 {
 		resolution, bookmark_error := macos_bookmark_resolve(bookmark_base64, context.temp_allocator)
-		if bookmark_error != .None {return .Bookmark}
-		defer macos_bookmark_resolution_close(&resolution)
-		scan_path = resolution.path
+		if bookmark_error == .None {
+			scan_path = resolution.path
+			defer macos_bookmark_resolution_close(&resolution)
+		}
 	}
+	if !filepath.is_abs(scan_path) || !os.is_dir(scan_path) {
+		return .Invalid_Root
+	}
+	state.scan_path = strings.clone(scan_path)
+	state.root_id = root_id
+	state.recursive = recursive
+	state.seen = make(map[string]bool)
+	append(&state.directory_stack, strings.clone(state.scan_path))
+	return .None
+}
 
-	paths, enumerate_error := folder_enumerate_images(scan_path, recursive)
-	defer delete_strings(paths)
-	if enumerate_error != .None {return enumerate_error}
+// folder_scan_step walks the folder until it has processed up to batch_limit
+// image files or the tree is exhausted. When the tree is exhausted it
+// reconciles removed files, rebuilds the full-text index, and stamps the scan
+// time. The second result is true when more directories remain.
+folder_scan_step :: proc(
+	database: ^SQLite_DB,
+	state: ^Folder_Scan_State,
+	batch_limit: int,
+) -> (more: bool, error: Folder_Scan_Error) {
+	if database == nil || state == nil || state.finished {return false, .Invalid_Root}
+	limit := batch_limit
+	if limit <= 0 {limit = FOLDER_SCAN_BATCH_FILES}
+	processed := 0
+	for len(state.directory_stack) > 0 && processed < limit {
+		directory := pop(&state.directory_stack)
+		handle, open_error := os.open(directory)
+		if open_error != nil {
+			delete(directory)
+			continue
+		}
+		entries, read_error := os.read_dir(handle, -1, context.allocator)
+		_ = os.close(handle)
+		if read_error != nil {
+			delete(directory)
+			for entry in entries {os.file_info_delete(entry, context.allocator)}
+			delete(entries)
+			continue
+		}
+		resume := false
+		for entry in entries {
+			// Descend only into real directories; following symlinks can loop.
+			if entry.type == .Directory {
+				if state.recursive &&
+				   !strings.has_prefix(entry.name, ".") &&
+				   !folder_scan_skip_directory(entry.name) {
+					append(&state.directory_stack, strings.clone(entry.fullpath))
+				}
+			} else if entry.type == .Regular &&
+			          folder_image_supported(entry.fullpath) {
+				if processed >= limit {
+					// The batch budget ran out inside this directory; revisit
+					// it on the next step rather than dropping the remainder.
+					resume = true
+					break
+				}
+				if folder_upsert_scan_file(database, state, entry.fullpath) {
+					processed += 1
+				}
+			}
+		}
+		for entry in entries {os.file_info_delete(entry, context.allocator)}
+		delete(entries)
+		if resume {
+			// Move ownership of the directory string back onto the stack.
+			append(&state.directory_stack, directory)
+			break
+		}
+		delete(directory)
+	}
+	if len(state.directory_stack) > 0 {
+		return true, .None
+	}
+	state.finished = true
+	return false, folder_scan_finalize(database, state)
+}
 
+folder_upsert_scan_file :: proc(database: ^SQLite_DB, state: ^Folder_Scan_State, path: string) -> bool {
+	// Already indexed during this scan; do not consume the batch budget so a
+	// resumed directory advances past the files it finished previously.
+	if state.seen[path] {return false}
+	info, stat_error := os.stat(path, context.allocator)
+	if stat_error != nil {return false}
+	defer os.file_info_delete(info, context.allocator)
+	image_info, inspectable := macos_image_inspect(path)
+	if !inspectable {return false}
+	// image_info.media_type is a borrowed view into the inspection buffer and
+	// must not be deleted; it is consumed synchronously by the upsert.
+	if !folder_upsert_image(
+		database,
+		state.root_id,
+		path,
+		image_info.media_type,
+		info.size,
+		time.to_unix_nanoseconds(info.modification_time) / 1_000_000,
+		image_info.pixel_width,
+		image_info.pixel_height,
+	) {
+		return false
+	}
+	state.seen[strings.clone(path)] = true
+	return true
+}
+
+// folder_scan_finalize removes rows for files that vanished, rebuilds the FTS
+// index, and stamps the scan time in one transaction.
+folder_scan_finalize :: proc(database: ^SQLite_DB, state: ^Folder_Scan_State) -> Folder_Scan_Error {
 	if !sqlite_execute(database, "BEGIN IMMEDIATE;") {return .Index}
 	committed := false
 	defer if !committed {_ = sqlite_execute(database, "ROLLBACK;")}
 
-	// Load the current image rows so stale entries can be removed without
-	// touching tag columns on the rows that survive.
-	existing, existing_ok := folder_existing_paths(database, root_id)
+	existing, existing_ok := folder_existing_paths(database, state.root_id)
 	defer delete_strings(existing)
 	if !existing_ok {return .Index}
-
-	seen := make(map[string]bool)
-	defer delete(seen)
-
-	for source_path in paths {
-		info, stat_error := os.stat(source_path, context.allocator)
-		if stat_error != nil {continue}
-		defer os.file_info_delete(info, context.allocator)
-		image_info, inspectable := macos_image_inspect(source_path)
-		if !inspectable {continue}
-		// image_info.media_type is a borrowed view into the inspection buffer
-		// and must not be deleted; it is consumed synchronously by the upsert.
-		if !folder_upsert_image(
-			database,
-			root_id,
-			source_path,
-			image_info.media_type,
-			info.size,
-			time.to_unix_nanoseconds(info.modification_time) / 1_000_000,
-			image_info.pixel_width,
-			image_info.pixel_height,
-		) {
-			return .Index
-		}
-		seen[source_path] = true
-	}
-
 	for existing_path in existing {
-		if seen[existing_path] {continue}
-		if !folder_delete_image(database, root_id, existing_path) {return .Index}
+		if state.seen[existing_path] {continue}
+		if !folder_delete_image(database, state.root_id, existing_path) {return .Index}
 	}
 
-	if !folder_rebuild_fts(database, root_id) {return .Index}
+	if !folder_rebuild_fts(database, state.root_id) {return .Index}
 	statement, prepared := sqlite_prepare(database, `
 UPDATE folder_roots SET last_scan_unix_ms = ? WHERE root_id = ?;
 `)
 	if !prepared {return .Index}
 	defer sqlite3_finalize(statement)
 	if !sqlite_bind_i64_value(statement, 1, library_now_unix_ms()) ||
-	   !sqlite_bind_i64_value(statement, 2, root_id) {return .Index}
+	   !sqlite_bind_i64_value(statement, 2, state.root_id) {return .Index}
 	if sqlite3_step(statement) != SQLITE_DONE {return .Index}
 	if !sqlite_execute(database, "COMMIT;") {return .Index}
 	committed = true
 	return .None
 }
 
-// folder_enumerate_images collects supported image paths below a root. The
-// walk is recursive unless the caller passes recursive=false, in which case
-// only the root directory itself is read.
-folder_enumerate_images :: proc(root: string, recursive: bool) -> ([]string, Folder_Scan_Error) {
-	if len(root) == 0 || !filepath.is_abs(root) {return nil, .Invalid_Root}
-	if info, stat_error := os.stat(root, context.temp_allocator); stat_error != nil {
-		return nil, .Open
-	} else {
-		defer os.file_info_delete(info, context.temp_allocator)
-		if !os.is_dir(root) {return nil, .Invalid_Root}
+// folder_scan_root runs an incremental scan to completion. The CLI and tests
+// use this; the GUI drives the same steps incrementally through the service.
+folder_scan_root :: proc(database: ^SQLite_DB, root_id: i64) -> Folder_Scan_Error {
+	if database == nil {return .Invalid_Root}
+	path, bookmark_base64, recursive, found := folder_root_get(database, root_id)
+	defer delete(path)
+	defer delete(bookmark_base64)
+	if !found || len(path) == 0 {return .Invalid_Root}
+	state: Folder_Scan_State
+	defer folder_scan_state_destroy(&state)
+	if start_error := folder_scan_state_start(&state, root_id, path, bookmark_base64, recursive); start_error != .None {
+		return start_error
 	}
-	result: [dynamic]string
-	stack := make([dynamic]string, 1, context.allocator)
-	stack[0] = strings.clone(root, context.allocator)
-	defer delete(stack)
-	for len(stack) > 0 {
-		directory := pop(&stack)
-		defer delete(directory)
-		handle, open_error := os.open(directory)
-		if open_error != nil {continue}
-		entries, read_error := os.read_dir(handle, -1, context.allocator)
-		_ = os.close(handle)
-		if read_error != nil {
-			for entry in entries {os.file_info_delete(entry, context.allocator)}
-			delete(entries)
-			continue
-		}
-		for entry in entries {
-			if os.is_dir(entry.fullpath) {
-				if recursive && !strings.has_prefix(entry.name, ".") {
-					append(&stack, strings.clone(entry.fullpath))
-				}
-			} else if folder_image_supported(entry.fullpath) {
-				append(&result, strings.clone(entry.fullpath))
-			}
-			os.file_info_delete(entry, context.allocator)
-		}
-		delete(entries)
+	for {
+		more, step_error := folder_scan_step(database, &state, FOLDER_SCAN_BATCH_FILES)
+		if step_error != .None {return step_error}
+		if !more {break}
 	}
-	return result[:], .None
+	return .None
 }
 
 folder_existing_paths :: proc(

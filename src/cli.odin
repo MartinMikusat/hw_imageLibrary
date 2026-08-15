@@ -409,6 +409,24 @@ library_cli_run :: proc(args: []string) -> int {
 	if !exchanged {
 		return library_cli_error("service_unavailable", "The background library service did not start.")
 	}
+	// The folder scan is incremental; drive it to completion so the CLI
+	// returns once the folder is fully indexed. The initial response was
+	// temp-allocated, so free its fields as temp before looping with the
+	// default allocator and destroying each intermediate response normally.
+	if request.command == "folder.scan" && response.ok && response.message == "scanning" {
+		library_service_response_destroy(&response, context.temp_allocator)
+		for _ in 0..<20000 {
+			loop_response, loop_exchanged := library_cli_exchange(request)
+			if !loop_exchanged {break}
+			finished := loop_response.ok && loop_response.message == "complete"
+			failed := !loop_response.ok
+			if finished || failed {
+				response = loop_response
+				break
+			}
+			library_service_response_destroy(&loop_response)
+		}
+	}
 	return library_cli_emit(response)
 }
 

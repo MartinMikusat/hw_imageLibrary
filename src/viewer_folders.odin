@@ -5,6 +5,7 @@ import "core:os"
 import "core:path/filepath"
 import "core:strconv"
 import "core:strings"
+import "core:time"
 import framework_draw "ui_framework:draw"
 import framework_metal "ui_framework:metal"
 import framework_ui "ui_framework:core"
@@ -102,14 +103,41 @@ viewer_add_folder_source :: proc() {
 	}
 	viewer_reload_folders()
 	if root_id > 0 {
-		_ = viewer_mutation({
-			protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION,
-			command="folder.scan",
-			root_id=root_id,
-		}, false)
-		viewer_reload_folders()
 		viewer_activate_folder_source(root_id)
+		// Drive the incremental scan from the frame timer so a large folder
+		// cannot stall the service or the UI; results appear as it runs.
+		viewer.scanning_root_id = root_id
+		viewer.last_scan_step = time.tick_add(time.tick_now(), -400*time.Millisecond)
+		viewer_folder_scan_step()
 	}
+}
+
+// viewer_folder_scan_step advances the incremental scan for the active root by
+// one batch and refreshes folder data as images are indexed.
+viewer_folder_scan_step :: proc() {
+	if viewer.scanning_root_id <= 0 {return}
+	response, exchanged := library_cli_exchange({
+		protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION,
+		command="folder.scan",
+		root_id=viewer.scanning_root_id,
+	})
+	done := false
+	if exchanged && response.ok {
+		done = response.message == "complete"
+		if !done {
+			library_service_response_destroy(&response)
+			viewer_reload_folder_images()
+			viewer.needs_redraw = true
+			return
+		}
+	} else if exchanged {
+		library_service_response_destroy(&response)
+	}
+	viewer.scanning_root_id = 0
+	viewer_reload_folder_images()
+	viewer_reload_folders()
+	viewer_set_status("Folder scan complete.")
+	viewer.needs_redraw = true
 }
 
 viewer_search_append :: proc(addition: string, maximum: int) {
@@ -309,14 +337,16 @@ viewer_add_folder_bar :: proc(frame: ^framework_ui.Frame, theme: hal_ui.Palette)
 			hal_ui.control_style(theme, role=.Destructive),
 		)
 		right -= 64
+		label := "SCAN"
+		if viewer.scanning_root_id == viewer.active_root_id {label = "…"}
 		viewer_control(
 			frame,
 			"scan folder",
 			"rescan this folder",
-			"SCAN",
+			label,
 			{right, bar.y+4, 56, chip_height},
 			{kind=.Scan_Folder},
-			hal_ui.control_style(theme),
+			hal_ui.control_style(theme, viewer.scanning_root_id == viewer.active_root_id ? .Disabled : .Idle),
 		)
 	}
 
