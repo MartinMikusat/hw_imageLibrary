@@ -5,7 +5,6 @@ import "core:os"
 import "core:path/filepath"
 import "core:strconv"
 import "core:strings"
-import "core:time"
 import framework_draw "ui_framework:draw"
 import framework_metal "ui_framework:metal"
 import framework_ui "ui_framework:core"
@@ -39,7 +38,6 @@ viewer_reload_folders :: proc() -> bool {
 	}
 	library_service_response_destroy(&viewer.roots)
 	viewer.roots = response
-	viewer.last_folder_reload = time.tick_now()
 	viewer.needs_redraw = true
 	return true
 }

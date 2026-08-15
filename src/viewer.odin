@@ -148,8 +148,8 @@ Viewer_State :: struct {
 	status:                      string,
 	needs_redraw:                bool,
 	last_reload:                 time.Tick,
-	last_folder_reload:          time.Tick,
 	reload_started:              bool,
+	reload_failed:               bool,
 	loads_this_frame:            int,
 }
 
@@ -213,6 +213,9 @@ viewer_reload_captures :: proc() -> bool {
 		} else {
 			viewer_set_status("The library service is unavailable.")
 		}
+		viewer.last_reload = time.tick_now()
+		viewer.reload_started = true
+		viewer.reload_failed = true
 		return false
 	}
 	library_service_response_destroy(&viewer.captures)
@@ -226,6 +229,7 @@ viewer_reload_captures :: proc() -> bool {
 	if viewer.selected < 0 && len(viewer.captures.captures) > 0 {viewer.selected = 0}
 	viewer.last_reload = time.tick_now()
 	viewer.reload_started = true
+	viewer.reload_failed = false
 	viewer.needs_redraw = true
 	return true
 }
@@ -1484,13 +1488,19 @@ viewer_on_frame :: proc "c" (self: Id, command: Sel, timer: Id) {
 		viewer.needs_redraw = true
 	}
 	msg_void_size(viewer.layer, sel_registerName("setDrawableSize:"), {viewer.width*viewer.scale, viewer.height*viewer.scale})
-	if !viewer.reload_started || time.tick_since(viewer.last_reload) >= 2*time.Second {
+	// Reload captures on a backoff schedule: when the last reload failed, wait
+	// much longer so a dead service cannot freeze the main thread every frame.
+	// The service start is guarded against an unconfigured library, so these
+	// attempts are cheap when the service cannot run at all.
+	if !viewer.reload_started || time.tick_since(viewer.last_reload) >= viewer_reload_interval() {
 		_ = viewer_reload_captures()
 	}
-	if !viewer.reload_started || time.tick_since(viewer.last_folder_reload) >= 5*time.Second {
-		viewer_reload_folders()
-	}
 	if viewer.needs_redraw {viewer_render()}
+}
+
+viewer_reload_interval :: proc() -> time.Duration {
+	if viewer.reload_failed {return 10*time.Second}
+	return 2*time.Second
 }
 
 viewer_register_classes :: proc() -> (view_class, window_class: Id) {
@@ -1597,7 +1607,6 @@ viewer_initialize :: proc() -> bool {
 	_ = viewer_reload_captures()
 	viewer_reload_settings()
 	viewer_reload_folders()
-	viewer.last_folder_reload = time.tick_now()
 	return true
 }
 
