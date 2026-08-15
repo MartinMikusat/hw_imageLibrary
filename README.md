@@ -31,16 +31,17 @@ The folder-source backend is implemented: user-selected folders are registered
 with security-scoped bookmarks, scanned in place (recursive or top-level), and
 reconciled against the machine-local index, with full-text search over paths
 and tag columns through the `folder add|add-choose|list|scan|remove|images|search`
-CLI family. The reusable
+CLI family. The viewer exposes these sources through a source bar (library and
+folder chips, add/scan/remove, search field), folder grids with on-demand
+thumbnails, and a detail panel with open-in-Finder, copy-to-clipboard,
+copy-to-folder, and export actions. The reusable
 [`hw_odin_imageSimilarity`](../hw_odin_imageSimilarity/README.md) library v1 is
 implemented with an Apple Vision feature-print embedder, a pure-Odin
 perceptual-hash prefilter, and a SIMD brute-force similarity index; its work
 queue lives in its own `TODO.md`.
 
-Remaining: the viewer integration for folder sources (folder sidebar, search
-and filter field, tag chips, detail view, copy actions), recognition tagging
-with metadata write-back, and the similarity wiring in the app. See the
-consolidated plan for the full scope and gates.
+Remaining: recognition tagging with metadata write-back and the similarity
+wiring in the app. See the consolidated plan for the full scope and gates.
 
 ## Version 1 product boundary
 
