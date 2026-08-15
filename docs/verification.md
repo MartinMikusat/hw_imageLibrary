@@ -13,8 +13,8 @@ canvas, inline SVG, child-frame images, and off-screen images. Separate geometry
 tests exercise the 80%, 100%, 125%, and 200% scale matrix.
 
 The debug app bundle builds and completes a configured hidden-launch smoke test
-with `HW_IMAGE_LIBRARY_ACTIVATE_ON_LAUNCH=0` and
-`HW_IMAGE_LIBRARY_VISIBLE_ON_LAUNCH=0`; the viewer produces no diagnostic output
+with `HW_GALLERY_ACTIVATE_ON_LAUNCH=0` and
+`HW_GALLERY_VISIBLE_ON_LAUNCH=0`; the viewer produces no diagnostic output
 and the background service can be stopped through its test-only command.
 
 Release sign-off still requires:

@@ -8,7 +8,7 @@ remain on disk and do not enter the materialized view.
 ## Authoritative root
 
 ```text
-hw_imageLibrary/
+hw_gallery/
   library.json
   objects/sha256/ab/abcdef...64-lowercase-hex
   join-requests/<device-uuid>.json

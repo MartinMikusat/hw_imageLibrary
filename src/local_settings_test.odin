@@ -29,15 +29,15 @@ local_settings_round_trip_and_sequence_reconciliation_test :: proc(t: ^testing.T
 	testing.expect(t, support_joined && library_joined)
 	if !support_joined || !library_joined {return}
 	previous, had_previous := os.lookup_env(
-		HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE,
+		HW_GALLERY_SUPPORT_OVERRIDE,
 		context.temp_allocator,
 	)
 	defer if had_previous {
-		_ = os.set_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE, previous)
+		_ = os.set_env(HW_GALLERY_SUPPORT_OVERRIDE, previous)
 	} else {
-		_ = os.unset_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE)
+		_ = os.unset_env(HW_GALLERY_SUPPORT_OVERRIDE)
 	}
-	testing.expect(t, os.set_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE, support_path) == nil)
+	testing.expect(t, os.set_env(HW_GALLERY_SUPPORT_OVERRIDE, support_path) == nil)
 	root, root_error := library_root_initialize(
 		library_path,
 		1_700_000_000_000,

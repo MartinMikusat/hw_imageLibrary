@@ -4,14 +4,14 @@ set -u
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "$ROOT/scripts/dev-launch-policy.sh"
 
-APP="$ROOT/build/hw_imageLibrary.app"
-EXECUTABLE="$APP/Contents/MacOS/hw_imageLibrary"
+APP="$ROOT/build/hw_gallery.app"
+EXECUTABLE="$APP/Contents/MacOS/hw_gallery"
 APP_PID=""
 APP_HAS_LAUNCHED=0
 LAUNCH_ACTIVATE=0
 LAUNCH_VISIBLE=1
-HW_IMAGE_LIBRARY_APP_SUPPORT_DIR=${HW_IMAGE_LIBRARY_APP_SUPPORT_DIR:-"$ROOT/build/dev-support"}
-export HW_IMAGE_LIBRARY_APP_SUPPORT_DIR
+HW_GALLERY_APP_SUPPORT_DIR=${HW_GALLERY_APP_SUPPORT_DIR:-"$ROOT/build/dev-support"}
+export HW_GALLERY_APP_SUPPORT_DIR
 
 fingerprint() {
   stat -f '%m:%z:%N' \
@@ -49,9 +49,9 @@ cleanup() {
 }
 
 launch_app() {
-  HW_IMAGE_LIBRARY_ACTIVATE_ON_LAUNCH=$LAUNCH_ACTIVATE
-  HW_IMAGE_LIBRARY_VISIBLE_ON_LAUNCH=$LAUNCH_VISIBLE
-  export HW_IMAGE_LIBRARY_ACTIVATE_ON_LAUNCH HW_IMAGE_LIBRARY_VISIBLE_ON_LAUNCH
+  HW_GALLERY_ACTIVATE_ON_LAUNCH=$LAUNCH_ACTIVATE
+  HW_GALLERY_VISIBLE_ON_LAUNCH=$LAUNCH_VISIBLE
+  export HW_GALLERY_ACTIVATE_ON_LAUNCH HW_GALLERY_VISIBLE_ON_LAUNCH
   "$EXECUTABLE" &
   APP_PID=$!
 }
@@ -63,7 +63,7 @@ rebuild_and_launch() {
   fi
   was_frontmost=0
   if [ "$APP_HAS_LAUNCHED" -eq 1 ] && app_is_frontmost; then was_frontmost=1; fi
-  launch_policy=$(hw_image_library_dev_launch_policy "$APP_HAS_LAUNCHED" "$was_frontmost")
+  launch_policy=$(hw_gallery_dev_launch_policy "$APP_HAS_LAUNCHED" "$was_frontmost")
   LAUNCH_ACTIVATE=${launch_policy% *}
   LAUNCH_VISIBLE=${launch_policy#* }
   stop_app

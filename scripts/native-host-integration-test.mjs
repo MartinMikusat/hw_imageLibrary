@@ -7,14 +7,14 @@ import { join } from "node:path";
 const executable = process.argv[2];
 if (!executable) throw new Error("usage: native-host-integration-test.mjs <executable>");
 
-const temporary = mkdtempSync(join(tmpdir(), "hw-image-library-native-host-"));
+const temporary = mkdtempSync(join(tmpdir(), "hw-gallery-native-host-"));
 const support = join(temporary, "support");
 const library = join(temporary, "library");
-const nativeHost = join(temporary, "hw_imageLibrary-native-host");
+const nativeHost = join(temporary, "hw_gallery-native-host");
 const environment = {
   ...process.env,
-  HW_IMAGE_LIBRARY_APP_SUPPORT_DIR: support,
-  HW_IMAGE_LIBRARY_ALLOW_SERVICE_STOP: "1",
+  HW_GALLERY_APP_SUPPORT_DIR: support,
+  HW_GALLERY_ALLOW_SERVICE_STOP: "1",
 };
 
 function command(...args) {

@@ -1,6 +1,6 @@
 #!/bin/sh
 
-hw_image_library_dev_launch_policy() {
+hw_gallery_dev_launch_policy() {
   has_launched=$1
   was_frontmost=$2
   if [ "$has_launched" -eq 0 ]; then

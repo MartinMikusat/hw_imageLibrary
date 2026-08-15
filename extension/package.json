@@ -1,9 +1,9 @@
 {
-  "name": "hw-imagelibrary-extension",
+  "name": "hw-gallery-extension",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Chromium capture adapter for hw_imageLibrary",
+  "description": "Chromium capture adapter for hw_gallery",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",

@@ -162,7 +162,7 @@ try {
     ]);
   }
 } catch {}
-if (process.env.HW_IMAGE_LIBRARY_TEST_BRAVE === "1") {
+if (process.env.HW_GALLERY_TEST_BRAVE === "1") {
   candidates.push(["Brave", "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"]);
 }
 const browsers = [];

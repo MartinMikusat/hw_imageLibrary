@@ -169,15 +169,15 @@ library_service_moves_single_device_root_and_commits_bookmark_test :: proc(t: ^t
 	testing.expect(t, library_path_ok && destination_path_ok && support_path_ok)
 	if !library_path_ok || !destination_path_ok || !support_path_ok {return}
 	previous, had_previous := os.lookup_env(
-		HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE,
+		HW_GALLERY_SUPPORT_OVERRIDE,
 		context.temp_allocator,
 	)
 	defer if had_previous {
-		_ = os.set_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE, previous)
+		_ = os.set_env(HW_GALLERY_SUPPORT_OVERRIDE, previous)
 	} else {
-		_ = os.unset_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE)
+		_ = os.unset_env(HW_GALLERY_SUPPORT_OVERRIDE)
 	}
-	testing.expect(t, os.set_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE, support_path) == nil)
+	testing.expect(t, os.set_env(HW_GALLERY_SUPPORT_OVERRIDE, support_path) == nil)
 	root, root_error := library_root_initialize(
 		library_path,
 		1_700_000_000_000,
@@ -238,15 +238,15 @@ library_service_delete_restore_and_ack_test :: proc(t: ^testing.T) {
 	testing.expect(t, library_path_ok && support_path_ok)
 	if !library_path_ok || !support_path_ok {return}
 	previous, had_previous := os.lookup_env(
-		HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE,
+		HW_GALLERY_SUPPORT_OVERRIDE,
 		context.temp_allocator,
 	)
 	defer if had_previous {
-		_ = os.set_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE, previous)
+		_ = os.set_env(HW_GALLERY_SUPPORT_OVERRIDE, previous)
 	} else {
-		_ = os.unset_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE)
+		_ = os.unset_env(HW_GALLERY_SUPPORT_OVERRIDE)
 	}
-	testing.expect(t, os.set_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE, support_path) == nil)
+	testing.expect(t, os.set_env(HW_GALLERY_SUPPORT_OVERRIDE, support_path) == nil)
 
 	root, root_error := library_root_initialize(
 		library_path,
@@ -368,15 +368,15 @@ library_service_two_phase_physical_purge_test :: proc(t: ^testing.T) {
 	testing.expect(t, library_path_ok && support_path_ok)
 	if !library_path_ok || !support_path_ok {return}
 	previous, had_previous := os.lookup_env(
-		HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE,
+		HW_GALLERY_SUPPORT_OVERRIDE,
 		context.temp_allocator,
 	)
 	defer if had_previous {
-		_ = os.set_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE, previous)
+		_ = os.set_env(HW_GALLERY_SUPPORT_OVERRIDE, previous)
 	} else {
-		_ = os.unset_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE)
+		_ = os.unset_env(HW_GALLERY_SUPPORT_OVERRIDE)
 	}
-	testing.expect(t, os.set_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE, support_path) == nil)
+	testing.expect(t, os.set_env(HW_GALLERY_SUPPORT_OVERRIDE, support_path) == nil)
 	root, root_error := library_root_initialize(
 		library_path,
 		1_500_000_000_000,
@@ -523,15 +523,15 @@ library_service_two_phase_orphan_purge_test :: proc(t: ^testing.T) {
 	testing.expect(t, library_path_ok && support_path_ok)
 	if !library_path_ok || !support_path_ok {return}
 	previous, had_previous := os.lookup_env(
-		HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE,
+		HW_GALLERY_SUPPORT_OVERRIDE,
 		context.temp_allocator,
 	)
 	defer if had_previous {
-		_ = os.set_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE, previous)
+		_ = os.set_env(HW_GALLERY_SUPPORT_OVERRIDE, previous)
 	} else {
-		_ = os.unset_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE)
+		_ = os.unset_env(HW_GALLERY_SUPPORT_OVERRIDE)
 	}
-	testing.expect(t, os.set_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE, support_path) == nil)
+	testing.expect(t, os.set_env(HW_GALLERY_SUPPORT_OVERRIDE, support_path) == nil)
 
 	root, root_error := library_root_initialize(
 		library_path,

@@ -1,4 +1,4 @@
-# hw_imageLibrary TODO
+# hw_gallery TODO
 
 The ordered milestones implement the approved
 [Version 1 plan](docs/v1-plan.md). Complete one bounded vertical slice at a time.

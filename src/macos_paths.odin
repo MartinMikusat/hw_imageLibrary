@@ -4,10 +4,10 @@ import "core:os"
 import "core:path/filepath"
 import "base:runtime"
 
-HW_IMAGE_LIBRARY_BUNDLE_ID :: "com.halwayland.hw-imagelibrary"
-HW_IMAGE_LIBRARY_UBIQUITY_CONTAINER :: "iCloud.com.halwayland.hw-imagelibrary"
-HW_IMAGE_LIBRARY_NATIVE_HOST :: "com.halwayland.hw_imagelibrary"
-HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE :: "HW_IMAGE_LIBRARY_APP_SUPPORT_DIR"
+HW_GALLERY_BUNDLE_ID :: "com.halwayland.hw-gallery"
+HW_GALLERY_UBIQUITY_CONTAINER :: "iCloud.com.halwayland.hw-gallery"
+HW_GALLERY_NATIVE_HOST :: "com.halwayland.hw_gallery"
+HW_GALLERY_SUPPORT_OVERRIDE :: "HW_GALLERY_APP_SUPPORT_DIR"
 
 MACOS_APPLICATION_SUPPORT_DIRECTORY :: uint(14)
 MACOS_USER_DOMAIN_MASK :: uint(1)
@@ -38,7 +38,7 @@ MacOS_Bookmark_Resolution :: struct {
 macos_application_support_directory :: proc(
 	allocator := context.allocator,
 ) -> (string, MacOS_Path_Error) {
-	if override, found := os.lookup_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE, allocator); found {
+	if override, found := os.lookup_env(HW_GALLERY_SUPPORT_OVERRIDE, allocator); found {
 		if len(override) == 0 {return "", .Invalid}
 		if !library_ensure_directory(override) {return "", .Unavailable}
 		return override, .None
@@ -59,7 +59,7 @@ macos_application_support_directory :: proc(
 	app_url := msg_id_id_bool(
 		base_url,
 		sel_registerName("URLByAppendingPathComponent:isDirectory:"),
-		nsstring("hw_imageLibrary"),
+		nsstring("hw_gallery"),
 		true,
 	)
 	path, path_ok := nsurl_path(app_url, allocator)
@@ -84,7 +84,7 @@ macos_default_icloud_library_root :: proc(
 	container_url := msg_id_id(
 		manager,
 		sel_registerName("URLForUbiquityContainerIdentifier:"),
-		nsstring(HW_IMAGE_LIBRARY_UBIQUITY_CONTAINER),
+		nsstring(HW_GALLERY_UBIQUITY_CONTAINER),
 	)
 	if container_url == nil {return "", .Unavailable}
 	documents_url := msg_id_id_bool(
@@ -96,7 +96,7 @@ macos_default_icloud_library_root :: proc(
 	root_url := msg_id_id_bool(
 		documents_url,
 		sel_registerName("URLByAppendingPathComponent:isDirectory:"),
-		nsstring("hw_imageLibrary"),
+		nsstring("hw_gallery"),
 		true,
 	)
 	path, path_ok := nsurl_path(root_url, allocator)
@@ -252,7 +252,7 @@ macos_choose_library_move_destination :: proc(
 	msg_void_id(
 		panel,
 		sel_registerName("setNameFieldStringValue:"),
-		nsstring("hw_imageLibrary"),
+		nsstring("hw_gallery"),
 	)
 	if msg_int(panel, sel_registerName("runModal")) != MACOS_MODAL_RESPONSE_OK {
 		return "", .Cancelled

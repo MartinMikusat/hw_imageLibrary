@@ -578,7 +578,7 @@ viewer_rebuild_accessibility :: proc() {
 	if viewer.ax_children != nil {msg_void(viewer.ax_children, sel_registerName("release"))}
 	array := msg_id(objc_getClass("NSMutableArray"), sel_registerName("array"))
 	viewer.ax_children = msg_id(array, sel_registerName("retain"))
-	element_class := objc_getClass("hw_imageLibrary_AccessibilityElement")
+	element_class := objc_getClass("hw_gallery_AccessibilityElement")
 	for &control in viewer.registry.controls {
 		if .Accessibility not_in control.capabilities {continue}
 		element := msg_id(element_class, sel_registerName("new"))
@@ -1362,17 +1362,17 @@ viewer_on_frame :: proc "c" (self: Id, command: Sel, timer: Id) {
 viewer_register_classes :: proc() -> (view_class, window_class: Id) {
 	accessibility_class := objc_allocateClassPair(
 		objc_getClass("NSAccessibilityElement"),
-		"hw_imageLibrary_AccessibilityElement",
+		"hw_gallery_AccessibilityElement",
 		0,
 	)
 	class_addMethod(accessibility_class, sel_registerName("accessibilityPerformPress"), rawptr(viewer_on_ax_press), "B@:")
 	objc_registerClassPair(accessibility_class)
-	delegate_class := objc_allocateClassPair(objc_getClass("NSObject"), "hw_imageLibrary_Delegate", 0)
+	delegate_class := objc_allocateClassPair(objc_getClass("NSObject"), "hw_gallery_Delegate", 0)
 	class_addMethod(delegate_class, sel_registerName("viewerFrame:"), rawptr(viewer_on_frame), "v@:@")
 	class_addMethod(delegate_class, sel_registerName("applicationShouldTerminateAfterLastWindowClosed:"), rawptr(viewer_should_terminate), "B@:@")
 	objc_registerClassPair(delegate_class)
 	viewer.delegate = msg_id(delegate_class, sel_registerName("new"))
-	view_class = objc_allocateClassPair(objc_getClass("NSView"), "hw_imageLibrary_MetalView", 0)
+	view_class = objc_allocateClassPair(objc_getClass("NSView"), "hw_gallery_MetalView", 0)
 	class_addMethod(view_class, sel_registerName("acceptsFirstResponder"), rawptr(viewer_on_accepts_first), "B@:")
 	class_addMethod(view_class, sel_registerName("mouseDown:"), rawptr(viewer_on_mouse_down), "v@:@")
 	class_addMethod(view_class, sel_registerName("scrollWheel:"), rawptr(viewer_on_scroll), "v@:@")
@@ -1380,7 +1380,7 @@ viewer_register_classes :: proc() -> (view_class, window_class: Id) {
 	class_addMethod(view_class, sel_registerName("isAccessibilityElement"), rawptr(viewer_on_ax_is_element), "B@:")
 	class_addMethod(view_class, sel_registerName("accessibilityChildren"), rawptr(viewer_on_ax_children), "@@:")
 	objc_registerClassPair(view_class)
-	window_class = objc_allocateClassPair(objc_getClass("NSWindow"), "hw_imageLibrary_Window", 0)
+	window_class = objc_allocateClassPair(objc_getClass("NSWindow"), "hw_gallery_Window", 0)
 	class_addMethod(window_class, sel_registerName("canBecomeKeyWindow"), rawptr(viewer_window_can_become_key), "B@:")
 	class_addMethod(window_class, sel_registerName("canBecomeMainWindow"), rawptr(viewer_window_can_become_key), "B@:")
 	objc_registerClassPair(window_class)
@@ -1417,7 +1417,7 @@ viewer_initialize :: proc() -> bool {
 		false,
 	)
 	if viewer.window == nil {return false}
-	msg_void_id(viewer.window, sel_registerName("setTitle:"), nsstring("hw_imageLibrary"))
+	msg_void_id(viewer.window, sel_registerName("setTitle:"), nsstring("hw_gallery"))
 	msg_void_bool(viewer.window, sel_registerName("setOpaque:"), true)
 	msg_void_bool(viewer.window, sel_registerName("setHasShadow:"), false)
 	msg_void_size(viewer.window, sel_registerName("setMinSize:"), {VIEWER_MIN_WIDTH, VIEWER_MIN_HEIGHT})
@@ -1452,8 +1452,8 @@ viewer_initialize :: proc() -> bool {
 	}
 	if !framework_macos.frame_timer_start(&viewer.frame_timer, viewer.delegate, "viewerFrame:") {return false}
 	msg_void_id(viewer.window, sel_registerName("makeFirstResponder:"), viewer.view)
-	activate := os.get_env("HW_IMAGE_LIBRARY_ACTIVATE_ON_LAUNCH", context.temp_allocator) != "0"
-	visible := os.get_env("HW_IMAGE_LIBRARY_VISIBLE_ON_LAUNCH", context.temp_allocator) != "0"
+	activate := os.get_env("HW_GALLERY_ACTIVATE_ON_LAUNCH", context.temp_allocator) != "0"
+	visible := os.get_env("HW_GALLERY_VISIBLE_ON_LAUNCH", context.temp_allocator) != "0"
 	if activate {
 		msg_void_id(viewer.window, sel_registerName("makeKeyAndOrderFront:"), nil)
 		msg_void_int(viewer.app, sel_registerName("activateIgnoringOtherApps:"), 1)
@@ -1495,7 +1495,7 @@ viewer_destroy :: proc() {
 
 library_gui_run :: proc() {
 	if !viewer_initialize() {
-		fmt.eprintln("hw_imageLibrary could not initialize its native viewer.")
+		fmt.eprintln("hw_gallery could not initialize its native viewer.")
 		return
 	}
 	defer viewer_destroy()

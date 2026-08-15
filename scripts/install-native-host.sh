@@ -2,9 +2,9 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-HOST_NAME=com.halwayland.hw_imagelibrary
+HOST_NAME=com.halwayland.hw_gallery
 HOST_TEMPLATE="$ROOT/native-host/$HOST_NAME.json"
-HOST_EXECUTABLE=${1:-"$ROOT/build/hw_imageLibrary.app/Contents/MacOS/hw_imageLibrary-native-host"}
+HOST_EXECUTABLE=${1:-"$ROOT/build/hw_gallery.app/Contents/MacOS/hw_gallery-native-host"}
 
 case "$HOST_EXECUTABLE" in
   /*) ;;

@@ -1,17 +1,21 @@
-# hw_imageLibrary
+# hw_gallery
 
-`hw_imageLibrary` is a personal, source-aware image library for Apple Silicon
-macOS. A Chromium extension selects visible images from web pages and sends the
+`hw_gallery` is a personal, source-aware image gallery for Apple Silicon macOS.
+A Chromium extension selects visible images from web pages and sends the
 original bytes and provenance to a native Odin application for durable local
-storage, CLI access, and visual browsing. The exact Version 1 disk and
+storage, CLI access, and visual browsing. The same application is expanding to
+index arbitrary folders of images in place, recognize and permanently tag image
+content, and search and filter across every source. The exact Version 1 disk and
 native-message contracts are in
-[`docs/storage-format.md`](docs/storage-format.md).
+[`docs/storage-format.md`](docs/storage-format.md); the transformation plan is in
+[`../TODO_hw_imageLibrary.md`](../TODO_hw_imageLibrary.md).
 
 ## AI-assisted development disclosure
 
 Models used:
 
 - **gpt-5.6-sol**
+- **deepseek-v4-flash**
 
 ## Status
 
@@ -22,6 +26,11 @@ rebuilds, macOS file bridges, native-host ingestion, hidden launch policy, and
 rendered Chromium fixtures. Signed iCloud-container testing and live packaged
 extension runs in both Chrome and Brave remain before release; see
 [the verification record](docs/verification.md).
+
+In progress: folder sources (scan arbitrary folders in place, search, filter,
+copy), on-device recognition that permanently embeds tags into image metadata,
+and the reusable `hw_odin_imageSimilarity` library for visual duplicate and
+similarity search. See the consolidated plan for the full scope and gates.
 
 ## Version 1 product boundary
 
@@ -36,8 +45,8 @@ fails visibly when those bytes cannot be obtained. It does not silently replace
 the selected resource with a screenshot crop.
 
 CSS backgrounds, canvases, SVG artwork, video frames, child-frame images,
-off-screen images, full-page capture, image recognition, and generated image
-descriptions remain outside Version 1. The initial record keeps page-provided
+off-screen images, full-page capture, and generated image descriptions remain
+outside the Version 1 DOM capture. The initial record keeps page-provided
 alt text, an associated figure caption, and an optional user note as distinct
 values.
 
@@ -46,7 +55,7 @@ values.
 The repository contains two product components:
 
 ```text
-hw_imageLibrary/
+hw_gallery/
   src/                  Native Odin application, storage, viewer, and CLI
   extension/            Manifest V3 Chromium extension written in TypeScript
   docs/v1-plan.md       Version 1 architecture and implementation sequence
@@ -118,7 +127,7 @@ npm run test:browser --prefix extension
 ```
 
 After `./build.sh debug`, register the native host and load
-`build/hw_imageLibrary.app/Contents/Resources/extension` as an unpacked extension
+`build/hw_gallery.app/Contents/Resources/extension` as an unpacked extension
 in Chrome or Brave:
 
 ```sh
@@ -126,7 +135,7 @@ in Chrome or Brave:
 ```
 
 The debug build requires an explicitly selected local root. A release build
-requires `HW_IMAGE_LIBRARY_CODESIGN_IDENTITY`; its entitlements enable the
+requires `HW_GALLERY_CODESIGN_IDENTITY`; its entitlements enable the
 app-owned iCloud Documents container.
 
 The repository currently grants no software license. Public visibility permits

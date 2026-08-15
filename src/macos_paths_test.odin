@@ -21,15 +21,15 @@ macos_application_support_override_test :: proc(t: ^testing.T) {
 	if temp_error != nil {return}
 	defer os.remove_all(temporary_root)
 	previous, had_previous := os.lookup_env(
-		HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE,
+		HW_GALLERY_SUPPORT_OVERRIDE,
 		context.temp_allocator,
 	)
 	defer if had_previous {
-		_ = os.set_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE, previous)
+		_ = os.set_env(HW_GALLERY_SUPPORT_OVERRIDE, previous)
 	} else {
-		_ = os.unset_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE)
+		_ = os.unset_env(HW_GALLERY_SUPPORT_OVERRIDE)
 	}
-	testing.expect(t, os.set_env(HW_IMAGE_LIBRARY_SUPPORT_OVERRIDE, temporary_root) == nil)
+	testing.expect(t, os.set_env(HW_GALLERY_SUPPORT_OVERRIDE, temporary_root) == nil)
 	path, path_error := macos_application_support_directory(context.temp_allocator)
 	testing.expect_value(t, path_error, MacOS_Path_Error.None)
 	testing.expect_value(t, path, temporary_root)

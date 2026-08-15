@@ -1408,7 +1408,7 @@ library_service_execute :: proc(
 			issue_count = len(state.scan.issues),
 		}
 	case "service.stop":
-		allow_stop, allowed := os.lookup_env("HW_IMAGE_LIBRARY_ALLOW_SERVICE_STOP", context.temp_allocator)
+		allow_stop, allowed := os.lookup_env("HW_GALLERY_ALLOW_SERVICE_STOP", context.temp_allocator)
 		if !allowed || allow_stop != "1" {
 			return library_service_error_response("forbidden", "Service shutdown is disabled.")
 		}

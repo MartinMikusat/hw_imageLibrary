@@ -67,7 +67,7 @@ source page remain useful provenance.
 ## Library location
 
 Keep every authoritative file beneath one library root selected by the user.
-On first launch, prefer an `hw_imageLibrary` directory in the application's
+On first launch, prefer an `hw_gallery` directory in the application's
 iCloud ubiquity container. If iCloud storage is unavailable, require the user to
 choose a local directory rather than silently selecting a different durable
 location. Settings exposes the same directory chooser for an explicit library
@@ -89,7 +89,7 @@ continuing against different physical roots.
 The authoritative root has this logical layout:
 
 ```text
-hw_imageLibrary/
+hw_gallery/
   library.json
   objects/sha256/<first-two-hex>/<sha256>
   join-requests/<device-id>.json
@@ -243,9 +243,9 @@ ordered behind the active application, a background rebuild stays hidden, and a
 rebuild returns to the front only when the previous instance was frontmost.
 Automated tests use service or CLI modes and never activate the GUI.
 
-The bundle identifier is `com.halwayland.hw-imagelibrary`, its iCloud container
-is `iCloud.com.halwayland.hw-imagelibrary`, and its native-messaging host name is
-`com.halwayland.hw_imagelibrary`. Signed builds enable the iCloud Documents
+The bundle identifier is `com.halwayland.hw-gallery`, its iCloud container
+is `iCloud.com.halwayland.hw-gallery`, and its native-messaging host name is
+`com.halwayland.hw_gallery`. Signed builds enable the iCloud Documents
 service and ubiquity-container entitlement. Unsigned development builds require
 an explicitly selected local test root and must not pretend that the default
 iCloud container is available.

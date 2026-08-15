@@ -24,14 +24,14 @@ done
 
 case "$MODE" in
   debug)
-    APP="$ROOT/build/hw_imageLibrary.app"
+    APP="$ROOT/build/hw_gallery.app"
     ODIN_FLAGS="-debug -o:none"
     ;;
   release)
-    APP="$ROOT/build/release/hw_imageLibrary.app"
+    APP="$ROOT/build/release/hw_gallery.app"
     ODIN_FLAGS="-o:speed"
-    if [ -z "${HW_IMAGE_LIBRARY_CODESIGN_IDENTITY:-}" ]; then
-      echo "release builds require HW_IMAGE_LIBRARY_CODESIGN_IDENTITY for iCloud entitlements" >&2
+    if [ -z "${HW_GALLERY_CODESIGN_IDENTITY:-}" ]; then
+      echo "release builds require HW_GALLERY_CODESIGN_IDENTITY for iCloud entitlements" >&2
       exit 1
     fi
     ;;
@@ -56,8 +56,8 @@ elif [ "$MODE" = release ]; then
   exit 1
 fi
 
-odin build "$ROOT/src" \
-  -out:"$STAGING/Contents/MacOS/hw_imageLibrary" \
+hw-odin build "$ROOT/src" \
+  -out:"$STAGING/Contents/MacOS/hw_gallery" \
   $ODIN_FLAGS \
   -collection:local_command="$LOCAL_COMMAND_ROOT" \
   -collection:match_sorter="$MATCH_SORTER_ROOT" \
@@ -65,8 +65,8 @@ odin build "$ROOT/src" \
   -collection:flash="$FLASH_ROOT" \
   -collection:ui_framework="$UI_FRAMEWORK_ROOT" \
   -extra-linker-flags:"-framework AppKit -framework Foundation -framework CoreText -framework CoreGraphics -framework ImageIO -framework Metal -framework MetalKit -framework QuartzCore"
-cp "$STAGING/Contents/MacOS/hw_imageLibrary" "$STAGING/Contents/MacOS/hw_imageLibrary-service"
-cp "$STAGING/Contents/MacOS/hw_imageLibrary" "$STAGING/Contents/MacOS/hw_imageLibrary-native-host"
+cp "$STAGING/Contents/MacOS/hw_gallery" "$STAGING/Contents/MacOS/hw_gallery-service"
+cp "$STAGING/Contents/MacOS/hw_gallery" "$STAGING/Contents/MacOS/hw_gallery-native-host"
 cp "$ROOT/Info.plist" "$STAGING/Contents/Info.plist"
 
 npm run build --prefix "$ROOT/extension"
@@ -84,9 +84,9 @@ trap - INT TERM EXIT
 if [ "$MODE" = release ]; then
   codesign --force --options runtime \
     --entitlements "$ROOT/entitlements.plist" \
-    --sign "$HW_IMAGE_LIBRARY_CODESIGN_IDENTITY" \
+    --sign "$HW_GALLERY_CODESIGN_IDENTITY" \
     "$APP"
 fi
 
-cp "$APP/Contents/MacOS/hw_imageLibrary" "$ROOT/build/hw_imageLibrary"
+cp "$APP/Contents/MacOS/hw_gallery" "$ROOT/build/hw_gallery"
 printf 'built %s\n' "$APP"

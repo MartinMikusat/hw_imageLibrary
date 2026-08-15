@@ -8,7 +8,7 @@ assert_policy() {
   expected=$1
   has_launched=$2
   was_frontmost=$3
-  actual=$(hw_image_library_dev_launch_policy "$has_launched" "$was_frontmost")
+  actual=$(hw_gallery_dev_launch_policy "$has_launched" "$was_frontmost")
   [ "$actual" = "$expected" ] || {
     printf 'expected launch policy %s, got %s\n' "$expected" "$actual" >&2
     exit 1

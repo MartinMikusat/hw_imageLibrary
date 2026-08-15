@@ -15,7 +15,7 @@ import {
   type NativeWireMessage,
 } from "./wire-contract.js";
 
-const NATIVE_HOST = "com.halwayland.hw_imagelibrary";
+const NATIVE_HOST = "com.halwayland.hw_gallery";
 const NATIVE_RESPONSE_TIMEOUT_MS = 30_000;
 
 interface NativeResponse {
@@ -30,16 +30,14 @@ interface NativeResponse {
   message?: string;
 }
 
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-
 function errorResponse(errorCode: string, message: string): PanelResponse {
   return { ok: false, errorCode, message };
 }
 
 async function activeTab(): Promise<chrome.tabs.Tab> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   if (!tab?.id || tab.windowId === undefined) throw new Error("No active web tab is available.");
-  if (!tab.url?.startsWith("http://") && !tab.url?.startsWith("https://")) {
+  if (tab.url && !tab.url.startsWith("http://") && !tab.url.startsWith("https://")) {
     throw new Error("The active tab is not an HTTP or HTTPS page.");
   }
   return tab;
@@ -54,6 +52,9 @@ async function collectCandidates(): Promise<PanelResponse> {
     });
     const collected = results[0]?.result as CollectedDocument | undefined;
     if (!collected) return errorResponse("collection", "The page did not return an image candidate set.");
+    if (!collected.pageUrl.startsWith("http://") && !collected.pageUrl.startsWith("https://")) {
+      return errorResponse("collection", "The active tab is not an HTTP or HTTPS page.");
+    }
     const screenshotDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
     const stableResults = await chrome.scripting.executeScript({
       target: { tabId: tab.id! },

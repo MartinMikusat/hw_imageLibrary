@@ -5,15 +5,15 @@
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleDisplayName</key>
-  <string>Image Library</string>
+  <string>Gallery</string>
   <key>CFBundleExecutable</key>
-  <string>hw_imageLibrary</string>
+  <string>hw_gallery</string>
   <key>CFBundleIdentifier</key>
-  <string>com.halwayland.hw-imagelibrary</string>
+  <string>com.halwayland.hw-gallery</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>hw_imageLibrary</string>
+  <string>hw_gallery</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
