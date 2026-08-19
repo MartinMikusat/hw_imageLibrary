@@ -8,7 +8,7 @@ import "core:time"
 import "core:crypto/sha2"
 import "core:encoding/hex"
 
-FOLDER_INDEX_SCHEMA_VERSION :: 2
+FOLDER_INDEX_SCHEMA_VERSION :: 3
 
 // Folder roots are user-selected external folders indexed in place. The files
 // are never moved or copied; the machine-local SQLite index mirrors them and
@@ -37,6 +37,10 @@ CREATE TABLE IF NOT EXISTS folder_images (
   generated_tags TEXT NOT NULL DEFAULT '',
   recognition_tagged INTEGER NOT NULL DEFAULT 0,
   recognition_failed INTEGER NOT NULL DEFAULT 0,
+  dhash INTEGER NOT NULL DEFAULT 0,
+  embedding BLOB,
+  similarity_embedded INTEGER NOT NULL DEFAULT 0,
+  similarity_failed INTEGER NOT NULL DEFAULT 0,
   UNIQUE(root_id, path)
 );
 CREATE INDEX IF NOT EXISTS folder_images_root ON folder_images(root_id);
@@ -132,10 +136,18 @@ folder_index_migrate :: proc(database: ^SQLite_DB) -> bool {
 	defer sqlite3_finalize(statement)
 	has_tagged := false
 	has_failed := false
+	has_dhash := false
+	has_embedding := false
+	has_sim_embedded := false
+	has_sim_failed := false
 	for sqlite3_step(statement) == SQLITE_ROW {
 		name := sqlite_column_string(statement, 1, context.temp_allocator)
 		if name == "recognition_tagged" {has_tagged = true}
 		if name == "recognition_failed" {has_failed = true}
+		if name == "dhash" {has_dhash = true}
+		if name == "embedding" {has_embedding = true}
+		if name == "similarity_embedded" {has_sim_embedded = true}
+		if name == "similarity_failed" {has_sim_failed = true}
 	}
 	if !has_tagged {
 		if !sqlite_execute(
@@ -152,6 +164,53 @@ folder_index_migrate :: proc(database: ^SQLite_DB) -> bool {
 		) {
 			return false
 		}
+	}
+	if !has_dhash {
+		if !sqlite_execute(
+			database,
+			`ALTER TABLE folder_images ADD COLUMN dhash INTEGER NOT NULL DEFAULT 0;`,
+		) {
+			return false
+		}
+	}
+	if !has_embedding {
+		if !sqlite_execute(database, `ALTER TABLE folder_images ADD COLUMN embedding BLOB;`) {
+			return false
+		}
+	}
+	if !has_sim_embedded {
+		if !sqlite_execute(
+			database,
+			`ALTER TABLE folder_images ADD COLUMN similarity_embedded INTEGER NOT NULL DEFAULT 0;`,
+		) {
+			return false
+		}
+	}
+	if !has_sim_failed {
+		if !sqlite_execute(
+			database,
+			`ALTER TABLE folder_images ADD COLUMN similarity_failed INTEGER NOT NULL DEFAULT 0;`,
+		) {
+			return false
+		}
+	}
+	if !sqlite_execute(database, `
+CREATE TABLE IF NOT EXISTS capture_embeddings (
+  capture_id TEXT PRIMARY KEY,
+  object_digest TEXT NOT NULL,
+  dhash INTEGER NOT NULL DEFAULT 0,
+  embedding BLOB,
+  similarity_failed INTEGER NOT NULL DEFAULT 0
+);`) {
+		return false
+	}
+	if !sqlite_execute(database, `
+CREATE TABLE IF NOT EXISTS similarity_alerts (
+  capture_id TEXT PRIMARY KEY,
+  similar_count INTEGER NOT NULL,
+  created_unix_ms INTEGER NOT NULL
+);`) {
+		return false
 	}
 	return true
 }
@@ -532,6 +591,8 @@ folder_upsert_scan_file :: proc(database: ^SQLite_DB, state: ^Folder_Scan_State,
 	defer os.file_info_delete(info, context.allocator)
 	image_info, inspectable := macos_image_inspect(path)
 	if !inspectable {return false}
+	tags, tags_ok := metadata_keywords_read(path, context.temp_allocator)
+	if !tags_ok {tags = ""}
 	// image_info.media_type is a borrowed view into the inspection buffer and
 	// must not be deleted; it is consumed synchronously by the upsert.
 	if !folder_upsert_image(
@@ -543,6 +604,7 @@ folder_upsert_scan_file :: proc(database: ^SQLite_DB, state: ^Folder_Scan_State,
 		time.to_unix_nanoseconds(info.modification_time) / 1_000_000,
 		image_info.pixel_width,
 		image_info.pixel_height,
+		tags,
 	) {
 		return false
 	}
@@ -616,23 +678,46 @@ folder_existing_paths :: proc(
 	return result[:], true
 }
 
+// folder_upsert_image inserts or refreshes one indexed file. A changed size
+// or mtime clears the similarity embedding so the next embed batch retries
+// the current bytes. Unchanged files keep their vectors, including after a
+// keyword write-back that already recorded the new size and mtime.
 folder_upsert_image :: proc(
 	database: ^SQLite_DB,
 	root_id: i64,
 	path, media_type: string,
 	size_bytes, modified_unix_ms: i64,
 	width, height: int,
+	tags := "",
 ) -> bool {
 	statement, prepared := sqlite_prepare(database, `
 INSERT INTO folder_images
   (root_id, path, media_type, size_bytes, modified_unix_ms, pixel_width, pixel_height, tags, generated_tags)
-VALUES (?, ?, ?, ?, ?, ?, ?, '', '')
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, '')
 ON CONFLICT(root_id, path) DO UPDATE SET
+  -- Compare size and mtime before those columns are assigned; SQLite SET is left-to-right.
+  similarity_embedded = CASE
+    WHEN folder_images.size_bytes != excluded.size_bytes
+      OR folder_images.modified_unix_ms != excluded.modified_unix_ms
+    THEN 0 ELSE folder_images.similarity_embedded END,
+  similarity_failed = CASE
+    WHEN folder_images.size_bytes != excluded.size_bytes
+      OR folder_images.modified_unix_ms != excluded.modified_unix_ms
+    THEN 0 ELSE folder_images.similarity_failed END,
+  dhash = CASE
+    WHEN folder_images.size_bytes != excluded.size_bytes
+      OR folder_images.modified_unix_ms != excluded.modified_unix_ms
+    THEN 0 ELSE folder_images.dhash END,
+  embedding = CASE
+    WHEN folder_images.size_bytes != excluded.size_bytes
+      OR folder_images.modified_unix_ms != excluded.modified_unix_ms
+    THEN NULL ELSE folder_images.embedding END,
   media_type = excluded.media_type,
   size_bytes = excluded.size_bytes,
   modified_unix_ms = excluded.modified_unix_ms,
   pixel_width = excluded.pixel_width,
   pixel_height = excluded.pixel_height,
+  tags = excluded.tags,
   recognition_failed = 0;
 `)
 	if !prepared {return false}
@@ -644,6 +729,30 @@ ON CONFLICT(root_id, path) DO UPDATE SET
 	       sqlite_bind_i64_value(statement, 5, modified_unix_ms) &&
 	       sqlite_bind_int_value(statement, 6, width) &&
 	       sqlite_bind_int_value(statement, 7, height) &&
+	       sqlite_bind_text_value(statement, 8, tags) &&
+	       sqlite3_step(statement) == SQLITE_DONE
+}
+
+// folder_image_file_state_set records embedded keywords and the file's size
+// and mtime after a successful metadata write-back so the next scan does not
+// treat the rewritten file as a different image.
+folder_image_file_state_set :: proc(
+	database: ^SQLite_DB,
+	root_id, image_id: i64,
+	tags: string,
+	size_bytes, modified_unix_ms: i64,
+) -> bool {
+	statement, prepared := sqlite_prepare(database, `
+UPDATE folder_images
+SET tags = ?, size_bytes = ?, modified_unix_ms = ?
+WHERE root_id = ? AND image_id = ?;`)
+	if !prepared {return false}
+	defer sqlite3_finalize(statement)
+	return sqlite_bind_text_value(statement, 1, tags) &&
+	       sqlite_bind_i64_value(statement, 2, size_bytes) &&
+	       sqlite_bind_i64_value(statement, 3, modified_unix_ms) &&
+	       sqlite_bind_i64_value(statement, 4, root_id) &&
+	       sqlite_bind_i64_value(statement, 5, image_id) &&
 	       sqlite3_step(statement) == SQLITE_DONE
 }
 
@@ -762,4 +871,101 @@ WHERE root_id = ? AND recognition_tagged = 1;`)
 	if !sqlite_bind_i64_value(statement, 1, root_id) {return 0, false}
 	if sqlite3_step(statement) != SQLITE_ROW {return 0, false}
 	return int(i64(sqlite3_column_int64(statement, 0))), true
+}
+
+folder_embed_candidates :: proc(
+	database: ^SQLite_DB,
+	root_id: i64,
+	limit: int,
+	allocator := context.allocator,
+) -> ([]Folder_Index_Image, bool) {
+	statement, prepared := sqlite_prepare(database, `
+SELECT image_id, root_id, path, media_type, size_bytes, modified_unix_ms,
+       pixel_width, pixel_height, tags, generated_tags
+FROM folder_images
+WHERE root_id = ? AND similarity_embedded = 0 AND similarity_failed = 0
+ORDER BY image_id
+LIMIT ?;`)
+	if !prepared {return nil, false}
+	defer sqlite3_finalize(statement)
+	if !sqlite_bind_i64_value(statement, 1, root_id) ||
+	   !sqlite_bind_int_value(statement, 2, limit) {
+		return nil, false
+	}
+	result: [dynamic]Folder_Index_Image
+	for sqlite3_step(statement) == SQLITE_ROW {
+		append(&result, Folder_Index_Image{
+			image_id = i64(sqlite3_column_int64(statement, 0)),
+			root_id = i64(sqlite3_column_int64(statement, 1)),
+			path = sqlite_column_string(statement, 2, allocator),
+			media_type = sqlite_column_string(statement, 3, allocator),
+			size_bytes = i64(sqlite3_column_int64(statement, 4)),
+			modified_unix_ms = i64(sqlite3_column_int64(statement, 5)),
+			pixel_width = int(sqlite3_column_int64(statement, 6)),
+			pixel_height = int(sqlite3_column_int64(statement, 7)),
+			tags = sqlite_column_string(statement, 8, allocator),
+			generated_tags = sqlite_column_string(statement, 9, allocator),
+		})
+	}
+	return result[:], true
+}
+
+folder_image_embed_set :: proc(
+	database: ^SQLite_DB,
+	root_id, image_id: i64,
+	dhash: u64,
+	embedding: []u8,
+) -> bool {
+	statement, prepared := sqlite_prepare(database, `
+UPDATE folder_images
+SET dhash = ?, embedding = ?, similarity_embedded = 1, similarity_failed = 0
+WHERE root_id = ? AND image_id = ?;`)
+	if !prepared {return false}
+	defer sqlite3_finalize(statement)
+	return sqlite_bind_i64_value(statement, 1, i64(dhash)) &&
+	       sqlite_bind_blob_value(statement, 2, embedding) &&
+	       sqlite_bind_i64_value(statement, 3, root_id) &&
+	       sqlite_bind_i64_value(statement, 4, image_id) &&
+	       sqlite3_step(statement) == SQLITE_DONE
+}
+
+folder_image_embed_fail :: proc(
+	database: ^SQLite_DB,
+	root_id, image_id: i64,
+) -> bool {
+	statement, prepared := sqlite_prepare(database, `
+UPDATE folder_images SET similarity_failed = 1
+WHERE root_id = ? AND image_id = ?;`)
+	if !prepared {return false}
+	defer sqlite3_finalize(statement)
+	return sqlite_bind_i64_value(statement, 1, root_id) &&
+	       sqlite_bind_i64_value(statement, 2, image_id) &&
+	       sqlite3_step(statement) == SQLITE_DONE
+}
+
+folder_image_lookup :: proc(
+	database: ^SQLite_DB,
+	image_id: i64,
+	allocator := context.allocator,
+) -> (Folder_Index_Image, bool) {
+	statement, prepared := sqlite_prepare(database, `
+SELECT image_id, root_id, path, media_type, size_bytes, modified_unix_ms,
+       pixel_width, pixel_height, tags, generated_tags
+FROM folder_images WHERE image_id = ?;`)
+	if !prepared {return {}, false}
+	defer sqlite3_finalize(statement)
+	if !sqlite_bind_i64_value(statement, 1, image_id) {return {}, false}
+	if sqlite3_step(statement) != SQLITE_ROW {return {}, false}
+	return Folder_Index_Image{
+		image_id = i64(sqlite3_column_int64(statement, 0)),
+		root_id = i64(sqlite3_column_int64(statement, 1)),
+		path = sqlite_column_string(statement, 2, allocator),
+		media_type = sqlite_column_string(statement, 3, allocator),
+		size_bytes = i64(sqlite3_column_int64(statement, 4)),
+		modified_unix_ms = i64(sqlite3_column_int64(statement, 5)),
+		pixel_width = int(sqlite3_column_int64(statement, 6)),
+		pixel_height = int(sqlite3_column_int64(statement, 7)),
+		tags = sqlite_column_string(statement, 8, allocator),
+		generated_tags = sqlite_column_string(statement, 9, allocator),
+	}, true
 }

@@ -65,6 +65,8 @@ Library_Service_Response :: struct {
 	folders:          [dynamic]Folder_Service_Root    `json:"folders,omitempty"`,
 	folder_images:    [dynamic]Folder_Index_Image     `json:"folder_images,omitempty"`,
 	tagged:           int                             `json:"tagged,omitempty"`,
+	embedded:         int                             `json:"embedded,omitempty"`,
+	similar_count:    int                             `json:"similar_count,omitempty"`,
 }
 
 library_index_capture_destroy :: proc(
@@ -287,6 +289,25 @@ library_service_folder_tag_step :: proc(
 		image_tags_destroy(tags)
 		delete(tags)
 		delete(generated)
+		if len(combined) > 0 {
+			file_tags, file_ok := metadata_keywords_read(candidate.path, context.temp_allocator)
+			merged_file := generated_tags_merge(file_tags if file_ok else "", combined, context.temp_allocator)
+			if metadata_keywords_write(candidate.path, merged_file) != .None {
+				delete(combined)
+				continue
+			}
+			size_bytes, modified_unix_ms, stated := metadata_file_stat(candidate.path)
+			if stated {
+				_ = folder_image_file_state_set(
+					state.database,
+					root_id,
+					candidate.image_id,
+					merged_file,
+					size_bytes,
+					modified_unix_ms,
+				)
+			}
+		}
 		if !folder_image_tag_set(state.database, root_id, candidate.image_id, combined) {
 			delete(combined)
 			return false, .Vision_Failed, tagged_count
@@ -1869,6 +1890,76 @@ library_service_execute :: proc(
 			message = "tagging" if more else "complete",
 			tagged = tagged,
 		}
+	case "folder.embed":
+		if request.root_id <= 0 {
+			return library_service_error_response("invalid_root", "The folder root identifier is invalid.")
+		}
+		more, embed_error, embedded := library_service_folder_embed_step(state, request.root_id)
+		if embed_error != .None {
+			return library_service_error_response("similarity", "Similarity embeddings could not be updated.")
+		}
+		return {
+			protocol_version = LIBRARY_SERVICE_PROTOCOL_VERSION,
+			ok = true,
+			message = "embedding" if more else "complete",
+			embedded = embedded,
+		}
+	case "folder.similar":
+		if request.image_id <= 0 {
+			return library_service_error_response("invalid_image", "The folder image identifier is invalid.")
+		}
+		images, similar_ok := similarity_folder_similar(state.database, request.image_id, allocator)
+		if !similar_ok {
+			return library_service_error_response("similarity", "Similar images could not be loaded.")
+		}
+		return {
+			protocol_version = LIBRARY_SERVICE_PROTOCOL_VERSION,
+			ok = true,
+			folder_images = images,
+		}
+	case "folder.duplicates":
+		if request.root_id <= 0 {
+			return library_service_error_response("invalid_root", "The folder root identifier is invalid.")
+		}
+		images, groups, dup_ok := similarity_folder_duplicates(state.database, request.root_id, allocator)
+		if !dup_ok {
+			return library_service_error_response("similarity", "Duplicate groups could not be loaded.")
+		}
+		return {
+			protocol_version = LIBRARY_SERVICE_PROTOCOL_VERSION,
+			ok = true,
+			message = fmt.tprintf("%d", groups),
+			folder_images = images,
+			similar_count = groups,
+		}
+	case "similarity.pending":
+		capture_id, similar_count, pending := similarity_alert_latest(state.database, allocator)
+		return {
+			protocol_version = LIBRARY_SERVICE_PROTOCOL_VERSION,
+			ok = true,
+			has_capture = pending && similar_count > 0,
+			similar_count = similar_count,
+			message = capture_id,
+		}
+	case "similarity.similar":
+		if len(request.capture_id) == 0 {
+			return library_service_error_response("invalid_capture", "The capture identifier is invalid.")
+		}
+		images, similar_ok := similarity_capture_similar(state.database, request.capture_id, allocator)
+		if !similar_ok {
+			return library_service_error_response("similarity", "Similar folder images could not be loaded.")
+		}
+		return {
+			protocol_version = LIBRARY_SERVICE_PROTOCOL_VERSION,
+			ok = true,
+			folder_images = images,
+		}
+	case "similarity.dismiss":
+		if len(request.capture_id) == 0 {
+			return library_service_error_response("invalid_capture", "The capture identifier is invalid.")
+		}
+		_ = similarity_alert_clear(state.database, request.capture_id)
+		return {protocol_version = LIBRARY_SERVICE_PROTOCOL_VERSION, ok = true}
 	case "folder.images":
 		if request.root_id <= 0 {
 			return library_service_error_response("invalid_root", "The folder root identifier is invalid.")

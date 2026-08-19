@@ -323,6 +323,21 @@ library_cli_parse_request :: proc(
 			root_id, parsed := strconv.parse_i64(args[2])
 			if !parsed {return {}, false}
 			request.command, request.root_id = "folder.tag", root_id
+		case "embed":
+			if len(args) != 3 {return {}, false}
+			root_id, parsed := strconv.parse_i64(args[2])
+			if !parsed {return {}, false}
+			request.command, request.root_id = "folder.embed", root_id
+		case "similar":
+			if len(args) != 3 {return {}, false}
+			image_id, parsed := strconv.parse_i64(args[2])
+			if !parsed {return {}, false}
+			request.command, request.image_id = "folder.similar", image_id
+		case "duplicates":
+			if len(args) != 3 {return {}, false}
+			root_id, parsed := strconv.parse_i64(args[2])
+			if !parsed {return {}, false}
+			request.command, request.root_id = "folder.duplicates", root_id
 		case "remove":
 			if len(args) != 3 {return {}, false}
 			root_id, parsed := strconv.parse_i64(args[2])
@@ -390,7 +405,7 @@ library_cli_run :: proc(args: []string) -> int {
 	if !parsed {
 		return library_cli_error(
 			"usage",
-			"Usage: capture <list|show|search|open-source|export|delete|restore|note-set|thumbnail> ... or folder <add|add-choose|list|scan|tag|remove|images|search> ... or library <devices|ack|device-authorize|device-retire|purge-status|purge|move|rebuild> ...",
+			"Usage: capture <list|show|search|open-source|export|delete|restore|note-set|thumbnail> ... or folder <add|add-choose|list|scan|tag|embed|similar|duplicates|remove|images|search> ... or library <devices|ack|device-authorize|device-retire|purge-status|purge|move|rebuild> ...",
 		)
 	}
 	if request.command == "capture.open-source" {
@@ -430,6 +445,20 @@ library_cli_run :: proc(args: []string) -> int {
 	}
 	// Recognition is likewise batched; loop until the root is fully tagged.
 	if request.command == "folder.tag" && response.ok && response.message == "tagging" {
+		library_service_response_destroy(&response, context.temp_allocator)
+		for _ in 0..<20000 {
+			loop_response, loop_exchanged := library_cli_exchange(request)
+			if !loop_exchanged {break}
+			finished := loop_response.ok && loop_response.message == "complete"
+			failed := !loop_response.ok
+			if finished || failed {
+				response = loop_response
+				break
+			}
+			library_service_response_destroy(&loop_response)
+		}
+	}
+	if request.command == "folder.embed" && response.ok && response.message == "embedding" {
 		library_service_response_destroy(&response, context.temp_allocator)
 		for _ in 0..<20000 {
 			loop_response, loop_exchanged := library_cli_exchange(request)

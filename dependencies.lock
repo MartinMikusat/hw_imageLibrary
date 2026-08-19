@@ -1,10 +1,10 @@
 # Sibling repository, origin URL, and tested commit.
 hw_odin_ipc_localCommand https://github.com/MartinMikusat/hw_odin_ipc_localCommand.git bab49cbb144d05924165a6eb0bd09c5882a848b1
-hw_odin_matchSorter https://github.com/MartinMikusat/hw_odin_matchSorter.git 52bbe319503752881ebd777e0f3340fce027e017
+hw_odin_matchSorter https://github.com/MartinMikusat/hw_odin_matchSorter.git 83a6c395005c7cbd0652b05f7125a90bc80e78c6
 hw_odin_ui_commandPalette https://github.com/MartinMikusat/hw_odin_ui_commandPalette.git 72312d2f67cfc3d2ebc6a62fdbb1ba5bbc4e335f
 hw_odin_ui_flash https://github.com/MartinMikusat/hw_odin_ui_flash.git d06e98a40640b13eea5b979319022aad0a470d72
 hw_odin_ui_framework https://github.com/MartinMikusat/hw_odin_ui_framework.git c9a22543bcdfb607ba9d54c4e9e609308e879b8e
-
+hw_odin_imageSimilarity https://github.com/MartinMikusat/hw_odin_imageSimilarity.git 1a7e61d873ffc1f45f2f0f23efd2699d0f0caeb9
 # Bundled Iconoir release and file checksums.
 iconoir v7.11.1 3497016dcb93122b5a64a2df1221598a14ecf4f3 https://github.com/iconoir-icons/iconoir/archive/refs/tags/v7.11.1.tar.gz 6a22cb1c3eaa49485a5f40cf276c0d063af0792d7bfed8b4bec4fbfc8866e5b2
 iconoir-file LICENSE 869b60da1ada5b896d1f285c3c24ca193d612e308d1710a77a58f2f572eb4fa2

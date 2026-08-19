@@ -62,6 +62,9 @@ Viewer_Action_Kind :: enum {
 	Copy_Image,
 	Open_In_Finder,
 	Export_Folder_Image,
+	Find_Similar,
+	Show_Duplicates,
+	Review_Similar,
 	Focus_Search,
 	Clear_Search,
 }
@@ -103,6 +106,7 @@ Viewer_Confirmation_Kind :: enum {
 	Retire_Device,
 	Purge_Object,
 	Move_Library,
+	Similar_Capture,
 }
 
 Viewer_Source_Mode :: enum {
@@ -143,6 +147,9 @@ Viewer_State :: struct {
 	tagging_root_id:             i64,
 	last_tag_step:               time.Tick,
 	tagged_so_far:               int,
+	embedding_root_id:           i64,
+	last_embed_step:             time.Tick,
+	embedded_so_far:             int,
 	search_query:                string,
 	search_focused:              bool,
 	search_active:               bool,
@@ -245,6 +252,7 @@ viewer_reload_captures :: proc() -> bool {
 	viewer.last_reload = time.tick_now()
 	viewer.reload_started = true
 	viewer.reload_failed = false
+	viewer_check_similar_alert()
 	viewer.needs_redraw = true
 	return true
 }
@@ -381,6 +389,13 @@ viewer_execute_action :: proc(action: Viewer_Action) {
 			viewer.needs_redraw = true
 		}
 	case .Close_Modal:
+		if viewer.confirmation_kind == .Similar_Capture && len(viewer.confirmation_value) > 0 {
+			_ = viewer_mutation({
+				protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION,
+				command="similarity.dismiss",
+				capture_id=viewer.confirmation_value,
+			}, false)
+		}
 		command_palette.close(&viewer.palette)
 		viewer.modal = .None
 		delete(viewer.note_buffer)
@@ -523,7 +538,8 @@ viewer_execute_action :: proc(action: Viewer_Action) {
 			viewer.needs_redraw = true
 		}
 	case .Confirm_Destructive:
-		if viewer.confirmation_buffer != viewer.confirmation_value {
+		if viewer.confirmation_kind != .Similar_Capture &&
+		   viewer.confirmation_buffer != viewer.confirmation_value {
 			viewer_set_status("The confirmation text does not match.")
 			return
 		}
@@ -540,6 +556,17 @@ viewer_execute_action :: proc(action: Viewer_Action) {
 		} else if viewer.confirmation_kind == .Move_Library {
 			request.command = "library.move"
 			request.path = viewer.confirmation_value
+		} else if viewer.confirmation_kind == .Similar_Capture {
+			_ = viewer_mutation({
+				protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION,
+				command="similarity.dismiss",
+				capture_id=viewer.confirmation_value,
+			}, false)
+			viewer.modal = .None
+			viewer.confirmation_kind = .None
+			viewer_set_status("Kept both images.")
+			viewer.needs_redraw = true
+			return
 		} else {
 			return
 		}
@@ -610,6 +637,22 @@ viewer_execute_action :: proc(action: Viewer_Action) {
 		viewer_reveal_selected_in_finder()
 	case .Export_Folder_Image:
 		viewer_export_selected_folder_image()
+	case .Find_Similar:
+		viewer_find_similar_selected()
+	case .Show_Duplicates:
+		viewer_show_duplicates()
+	case .Review_Similar:
+		capture_id := strings.clone(viewer.confirmation_value, context.temp_allocator)
+		if len(capture_id) > 0 {
+			_ = viewer_mutation({
+				protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION,
+				command="similarity.dismiss",
+				capture_id=capture_id,
+			}, false)
+		}
+		viewer.modal = .None
+		viewer.confirmation_kind = .None
+		viewer_show_capture_similar(capture_id)
 	case .Focus_Search:
 		viewer.search_focused = true
 		viewer.needs_redraw = true
@@ -1160,9 +1203,17 @@ viewer_add_confirmation_modal :: proc(frame: ^framework_ui.Frame, theme: hal_ui.
 	} else if viewer.confirmation_kind == .Move_Library {
 		heading = "MOVE AUTHORITATIVE LIBRARY"
 		explanation = "The service coordinates the move, validates the destination, commits a new bookmark, and rebuilds local state. Every other active Mac must be retired first."
+	} else if viewer.confirmation_kind == .Similar_Capture {
+		heading = "SIMILAR IMAGE CAPTURED"
+		explanation = "The capture is already stored. Keep both copies, or review the duplicate groups. Near-duplicates are never deleted automatically."
 	}
-	viewer_add_text(frame, "confirmation heading", heading, {modal.x+18, modal.y+modal.h-50, modal.w-36, 30}, theme.destructive, 15, layer=.Modal)
+	viewer_add_text(frame, "confirmation heading", heading, {modal.x+18, modal.y+modal.h-50, modal.w-36, 30}, viewer.confirmation_kind == .Similar_Capture ? theme.text : theme.destructive, 15, layer=.Modal)
 	viewer_add_text(frame, "confirmation explanation", explanation, {modal.x+18, modal.y+modal.h-98, modal.w-36, 38}, theme.text_soft, 10, layer=.Modal)
+	if viewer.confirmation_kind == .Similar_Capture {
+		viewer_control(frame, "confirmation cancel", "keep both images", "KEEP BOTH", {modal.x+modal.w-198, modal.y+22, 84, 30}, {kind=.Confirm_Destructive}, hal_ui.control_style(theme, role=.Positive), layer=.Modal)
+		viewer_control(frame, "confirmation commit", "review duplicate groups", "REVIEW", {modal.x+modal.w-106, modal.y+22, 88, 30}, {kind=.Review_Similar}, hal_ui.control_style(theme), layer=.Modal)
+		return
+	}
 	viewer_add_text(frame, "confirmation instruction", "TYPE OR PASTE THIS EXACT IDENTIFIER", {modal.x+18, modal.y+146, modal.w-36, 18}, theme.muted, 8, layer=.Modal)
 	viewer_add_text(frame, "confirmation value", viewer.confirmation_value, {modal.x+18, modal.y+119, modal.w-36, 24}, theme.text, 9, layer=.Modal)
 	viewer_box(frame, "confirmation field", viewer.confirmation_buffer, {modal.x+18, modal.y+72, modal.w-36, 36}, {background=theme.field, border=theme.focus, text=theme.text, border_thickness=1, opacity=1, text_style={font=VIEWER_FONT, size=10, tracking=-0.3, horizontal=.Start, vertical=.Center, inset=10, truncate=true}}, {.Draw_Background, .Draw_Border, .Draw_Text}, .Modal)
@@ -1544,6 +1595,10 @@ viewer_on_frame :: proc "c" (self: Id, command: Sel, timer: Id) {
 	if viewer.tagging_root_id > 0 && time.tick_since(viewer.last_tag_step) >= 400*time.Millisecond {
 		viewer.last_tag_step = time.tick_now()
 		viewer_folder_tag_step()
+	}
+	if viewer.embedding_root_id > 0 && time.tick_since(viewer.last_embed_step) >= 400*time.Millisecond {
+		viewer.last_embed_step = time.tick_now()
+		viewer_folder_embed_step()
 	}
 	if viewer.needs_redraw {viewer_render()}
 }

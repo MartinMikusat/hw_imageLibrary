@@ -7,6 +7,7 @@ MATCH_SORTER_ROOT="$ROOT/../hw_odin_matchSorter"
 COMMAND_PALETTE_ROOT="$ROOT/../hw_odin_ui_commandPalette"
 FLASH_ROOT="$ROOT/../hw_odin_ui_flash"
 UI_FRAMEWORK_ROOT="$ROOT/../hw_odin_ui_framework"
+IMAGE_SIMILARITY_ROOT="$ROOT/../hw_odin_imageSimilarity"
 MODE=${1:-debug}
 
 STRICT_DEPENDENCIES=""
@@ -20,7 +21,8 @@ for dependency in \
   "$MATCH_SORTER_ROOT/match_sorter.odin" \
   "$COMMAND_PALETTE_ROOT/command_palette.odin" \
   "$FLASH_ROOT/flash.odin" \
-  "$UI_FRAMEWORK_ROOT/metal/metal.odin"
+  "$UI_FRAMEWORK_ROOT/metal/metal.odin" \
+  "$IMAGE_SIMILARITY_ROOT/image.odin"
 do
   if [ ! -f "$dependency" ]; then
     echo "[hw_gallery] missing Odin dependency: $dependency" >&2
@@ -75,6 +77,7 @@ hw-odin build "$ROOT/src" \
   -collection:command_palette="$COMMAND_PALETTE_ROOT" \
   -collection:flash="$FLASH_ROOT" \
   -collection:ui_framework="$UI_FRAMEWORK_ROOT" \
+  -collection:image_similarity="$IMAGE_SIMILARITY_ROOT" \
   -extra-linker-flags:"-framework AppKit -framework Foundation -framework CoreText -framework CoreGraphics -framework ImageIO -framework Metal -framework MetalKit -framework QuartzCore"
 cp "$APP/Contents/MacOS/hw_gallery" "$APP/Contents/MacOS/hw_gallery-service"
 cp "$APP/Contents/MacOS/hw_gallery" "$APP/Contents/MacOS/hw_gallery-native-host"

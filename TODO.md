@@ -67,5 +67,7 @@ The ordered milestones implement the approved
   video frames, child frames, and full-page documents.
 - [ ] Evaluate rendered screenshot crops as an explicitly labeled secondary
   artifact rather than a silent replacement for source bytes.
-- [ ] Define tags, collections, annotations, similarity search, sharing, and
-  pixel editing only after the capture and provenance model is stable.
+- [ ] Define collections, annotations, sharing, and pixel editing only after
+  the capture and provenance model is stable. Folder-source tags, metadata
+  write-back, and similarity search are implemented; library-capture tag events
+  remain open.

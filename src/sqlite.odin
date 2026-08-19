@@ -21,15 +21,19 @@ foreign sqlite {
 	sqlite3_bind_text :: proc "c" (statement: ^SQLite_Statement, index: c.int, value: cstring, bytes: c.int, destroy: rawptr) -> c.int ---
 	sqlite3_bind_int :: proc "c" (statement: ^SQLite_Statement, index, value: c.int) -> c.int ---
 	sqlite3_bind_int64 :: proc "c" (statement: ^SQLite_Statement, index: c.int, value: i64) -> c.int ---
+	sqlite3_bind_blob :: proc "c" (statement: ^SQLite_Statement, index: c.int, value: rawptr, bytes: c.int, destroy: rawptr) -> c.int ---
 	sqlite3_column_text :: proc "c" (statement: ^SQLite_Statement, index: c.int) -> cstring ---
 	sqlite3_column_int :: proc "c" (statement: ^SQLite_Statement, index: c.int) -> c.int ---
 	sqlite3_column_int64 :: proc "c" (statement: ^SQLite_Statement, index: c.int) -> i64 ---
+	sqlite3_column_blob :: proc "c" (statement: ^SQLite_Statement, index: c.int) -> rawptr ---
+	sqlite3_column_bytes :: proc "c" (statement: ^SQLite_Statement, index: c.int) -> c.int ---
 	sqlite3_busy_timeout :: proc "c" (database: ^SQLite_DB, milliseconds: c.int) -> c.int ---
 }
 
 SQLITE_OK :: 0
 SQLITE_ROW :: 100
 SQLITE_DONE :: 101
+SQLITE_TRANSIENT :: rawptr(~uintptr(0))
 SQLITE_OPEN_READONLY :: 0x00000001
 SQLITE_OPEN_READWRITE :: 0x00000002
 SQLITE_OPEN_CREATE :: 0x00000004
@@ -81,6 +85,34 @@ sqlite_bind_i64_value :: proc(statement: ^SQLite_Statement, index: int, value: i
 
 sqlite_bind_int_value :: proc(statement: ^SQLite_Statement, index, value: int) -> bool {
 	return sqlite3_bind_int(statement, c.int(index), c.int(value)) == SQLITE_OK
+}
+
+sqlite_bind_blob_value :: proc(statement: ^SQLite_Statement, index: int, value: []u8) -> bool {
+	if len(value) == 0 {
+		return sqlite3_bind_blob(statement, c.int(index), nil, 0, nil) == SQLITE_OK
+	}
+	return sqlite3_bind_blob(
+		statement,
+		c.int(index),
+		raw_data(value),
+		c.int(len(value)),
+		SQLITE_TRANSIENT,
+	) == SQLITE_OK
+}
+
+sqlite_column_blob_copy :: proc(
+	statement: ^SQLite_Statement,
+	index: int,
+	allocator := context.allocator,
+) -> []u8 {
+	bytes := int(sqlite3_column_bytes(statement, c.int(index)))
+	if bytes <= 0 {return nil}
+	source := sqlite3_column_blob(statement, c.int(index))
+	if source == nil {return nil}
+	result := make([]u8, bytes, allocator)
+	src := (cast([^]u8)source)[:bytes]
+	copy(result, src)
+	return result
 }
 
 sqlite_column_string :: proc(

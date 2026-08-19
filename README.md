@@ -31,14 +31,16 @@ extension runs in both Chrome and Brave remain before release; see
 The folder-source backend is implemented: user-selected folders are registered
 with security-scoped bookmarks, scanned in place (recursive or top-level), and
 reconciled against the machine-local index, with full-text search over paths
-and tag columns through the `folder add|add-choose|list|scan|tag|remove|images|search`
+and tag columns through the `folder add|add-choose|list|scan|tag|embed|similar|duplicates|remove|images|search`
 CLI family. Recognition runs Apple Vision's classify, animal, and object
 requests over every untagged image behind a pluggable `Tag_Provider` seam and
 writes the resulting keywords into the index's `generated_tags` column (auto-
-started after a scan, or per-folder via TAG). The viewer exposes these sources
-through a source bar (library and folder chips, add/scan/tag/remove, search
-field), folder grids with on-demand thumbnails, and a detail panel with
-open-in-Finder, copy-to-clipboard, copy-to-folder, and export actions. The
+started after a scan, or per-folder via TAG) and embeds those keywords into
+the image files as IPTC/XMP. The viewer exposes these sources
+through a source bar (library and folder chips, add/scan/tag/remove,
+duplicates, search field), folder grids with on-demand thumbnails, and a
+detail panel with open-in-Finder, copy-to-clipboard, copy-to-folder, export,
+and find-similar actions. The
 viewer chrome matches `hw_calendar`: a 38-point header, Iconoir close /
 minimize / zoom controls, a settings gear after those controls, header drag,
 double-click zoom to the screen visible frame, and 6-point edge resize. Open
@@ -48,9 +50,9 @@ library v1 is implemented with an Apple Vision feature-print embedder, a
 pure-Odin perceptual-hash prefilter, and a SIMD brute-force similarity index;
 its work queue lives in its own `TODO.md`.
 
-Remaining: metadata write-back of the generated tags into the image files,
-the similarity wiring in the app, and the remote recognition provider. See
-the consolidated plan for the full scope and gates.
+Remaining: the remote recognition provider and Version 1 release verification
+(live Chrome/Brave packaged-extension runs, signed iCloud container, two-Mac
+convergence). See the consolidated plan for the full scope and gates.
 
 ## Version 1 product boundary
 
@@ -124,6 +126,40 @@ application calls AppKit, Foundation, and iCloud document APIs directly from
 Odin through the Objective-C runtime pattern used by `hw_calendar` and
 `hw_videoClips`; it does not add a separate Swift or Objective-C helper layer.
 The design does not require a cross-device lock service or CloudKit database.
+
+## Interface layout
+
+The viewer is a single Metal window. Named rectangles come from one geometry
+path used for layout, drawing, and hit testing:
+
+| Region | Rectangle procedure | Role |
+| --- | --- | --- |
+| Header | `hal_ui.header_rect` / `viewer_add_header` | 38-point title bar, Iconoir window controls, settings gear, drag and double-click zoom |
+| Status | `VIEWER_STATUS_HEIGHT` (26) / `viewer_add_status` | Bottom strip for scan, recognition, and keyword write-back progress |
+| Source bar | `viewer_folder_bar_rect` | Library and folder chips, ADD FOLDER, SCAN/TAG/REMOVE, search field |
+| Grid | `viewer_grid_layout` | Thumbnail tiles; clips incomplete rows and scrolls vertically (`grid_scroll`) |
+| Detail | `viewer_detail_rect` | Metadata and actions for the selected capture or folder image |
+| Modals | `viewer_add_confirmation_modal` | Type-to-confirm destructive library actions |
+
+Folder keyword write-back is not type-to-confirm: embedding IPTC/XMP keywords
+in user-owned folder files is the chosen persistence path. Library capture
+objects stay byte-immutable; they are never rewritten. Capture ingest still
+stores the object; if it is visually similar to indexed folder images or other
+library captures, a keep-both / review modal appears. Escape and keep-both
+dismiss the alert. Review lists the folder images that matched the capture
+under the same near-duplicate gate. Near-duplicates are never deleted
+automatically.
+
+Find similar filters the grid through `folder.similar`. The DUPLICATES chip
+loads `folder.duplicates` groups into the same grid using the search result
+list. Similarity indexing runs on the idle timer after scan (`folder.embed`).
+
+Overflow: the grid clips tiles to its rectangle and scrolls. The source bar
+does not wrap; chips that exceed the bar width are clipped. The detail panel
+clips its fields.
+
+Demand-driven rendering is the default. Scan and recognition batches run on
+the idle frame timer; they do not keep Metal encoding while idle.
 
 ## Development
 

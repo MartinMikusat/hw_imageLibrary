@@ -404,6 +404,15 @@ native_ingestion_commit :: proc(
 	state.settings.next_sequence = max(state.settings.next_sequence, record.device_sequence+1)
 	settings_saved := local_settings_save(&state.settings) == .None
 	rebuilt := library_service_rebuild(state)
+	similar_count := 0
+	if rebuilt {
+		similar_count = similarity_ingest_staging(
+			state,
+			transfer.staging_path,
+			transfer.begin.capture_id,
+			digest,
+		)
+	}
 	native_ingestion_remove_transfer(state, transfer_index)
 	if !settings_saved || !rebuilt {
 		return native_ingestion_response_error(message, "local_rebuild", "The capture is durable, but the local sequence or index rebuild failed.")

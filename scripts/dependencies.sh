@@ -4,7 +4,7 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 LOCK_FILE=${HW_GALLERY_DEPENDENCY_LOCK:-"$ROOT/dependencies.lock"}
 
-DEPENDENCIES="hw_odin_ipc_localCommand hw_odin_matchSorter hw_odin_ui_commandPalette hw_odin_ui_flash hw_odin_ui_framework"
+DEPENDENCIES="hw_odin_ipc_localCommand hw_odin_matchSorter hw_odin_ui_commandPalette hw_odin_ui_flash hw_odin_ui_framework hw_odin_imageSimilarity"
 ICONOIR_FILES="LICENSE maximize.svg minus.svg settings.svg xmark.svg"
 
 repository_path() {

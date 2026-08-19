@@ -183,6 +183,7 @@ viewer_folder_scan_step :: proc() {
 	viewer.needs_redraw = true
 	// Recognition follows the scan in the background.
 	if count > 0 {viewer_start_tagging(viewer.active_root_id)}
+	if count > 0 {viewer_start_embedding(viewer.active_root_id)}
 }
 
 // viewer_start_tagging kicks off recognition over every untagged image in the
@@ -227,7 +228,7 @@ viewer_folder_tag_step :: proc() {
 	viewer.tagged_so_far += response.tagged
 	library_service_response_destroy(&response)
 	if !done {
-		viewer_set_status(fmt.tprintf("Tagging… %d images tagged", viewer.tagged_so_far))
+		viewer_set_status(fmt.tprintf("Tagging… %d images tagged, writing keywords", viewer.tagged_so_far))
 		viewer.needs_redraw = true
 		return
 	}
@@ -241,6 +242,7 @@ viewer_folder_tag_step :: proc() {
 	}
 	fmt.eprintf("[viewer] tagging complete: %d images tagged\n", viewer.tagged_so_far)
 	viewer.needs_redraw = true
+	if viewer.active_root_id > 0 {viewer_start_embedding(viewer.active_root_id)}
 }
 
 viewer_search_append :: proc(addition: string, maximum: int) {
@@ -463,6 +465,16 @@ viewer_add_folder_bar :: proc(frame: ^framework_ui.Frame, theme: hal_ui.Palette)
 			{kind=.Tag_Folder},
 			hal_ui.control_style(theme, viewer.tagging_root_id == viewer.active_root_id ? .Disabled : .Idle),
 		)
+		right -= 92
+		viewer_control(
+			frame,
+			"duplicates folder",
+			"show near-duplicate groups in this folder",
+			"DUPLICATES",
+			{right, bar.y+4, 84, chip_height},
+			{kind=.Show_Duplicates},
+			hal_ui.control_style(theme, viewer.search_active ? .Selected : .Idle),
+		)
 	}
 
 	search_width := f32(220)
@@ -578,10 +590,10 @@ viewer_add_folder_detail :: proc(frame: ^framework_ui.Frame, theme: hal_ui.Palet
 	}
 	action_y := panel.y+10
 	button_gap := f32(5)
-	button_width := (panel.w-28-button_gap*3)/4
-	actions := [4]Viewer_Action_Kind{.Open_In_Finder, .Copy_Image, .Copy_To_Folder, .Export_Folder_Image}
-	texts := [4]string{"FINDER", "COPY", "COPY TO…", "EXPORT"}
-	for index in 0..<4 {
+	button_width := (panel.w-28-button_gap*4)/5
+	actions := [5]Viewer_Action_Kind{.Open_In_Finder, .Copy_Image, .Copy_To_Folder, .Export_Folder_Image, .Find_Similar}
+	texts := [5]string{"FINDER", "COPY", "COPY TO…", "EXPORT", "SIMILAR"}
+	for index in 0..<5 {
 		button_rect := framework_draw.Rect{
 			panel.x+14+f32(index)*(button_width+button_gap),
 			action_y,
@@ -713,4 +725,154 @@ viewer_export_selected_folder_image :: proc() {
 		return
 	}
 	viewer_set_status(path)
+}
+
+viewer_start_embedding :: proc(root_id: i64) {
+	if root_id <= 0 {return}
+	viewer.embedding_root_id = root_id
+	viewer.embedded_so_far = 0
+	viewer.last_embed_step = time.tick_add(time.tick_now(), -400*time.Millisecond)
+	viewer_folder_embed_step()
+}
+
+viewer_folder_embed_step :: proc() {
+	if viewer.embedding_root_id <= 0 {return}
+	response, exchanged := library_cli_exchange({
+		protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION,
+		command="folder.embed",
+		root_id=viewer.embedding_root_id,
+	})
+	if !exchanged {
+		viewer.embedding_root_id = 0
+		viewer_set_status("The library service is unavailable; similarity indexing did not run.")
+		viewer.needs_redraw = true
+		return
+	}
+	if !response.ok {
+		viewer.embedding_root_id = 0
+		viewer_set_status(fmt.tprintf("Similarity indexing failed: %s", response.message))
+		library_service_response_destroy(&response)
+		viewer.needs_redraw = true
+		return
+	}
+	done := response.message == "complete"
+	viewer.embedded_so_far += response.embedded
+	library_service_response_destroy(&response)
+	if !done {
+		viewer_set_status(fmt.tprintf("Indexing similarity… %d images", viewer.embedded_so_far))
+		viewer.needs_redraw = true
+		return
+	}
+	viewer.embedding_root_id = 0
+	viewer_set_status(fmt.tprintf("Similarity index ready: %d images", viewer.embedded_so_far))
+	viewer.needs_redraw = true
+}
+
+viewer_find_similar_selected :: proc() {
+	image := viewer_selected_folder_image()
+	if image == nil {return}
+	response, exchanged := library_cli_exchange({
+		protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION,
+		command="folder.similar",
+		image_id=image.image_id,
+	})
+	if !exchanged || !response.ok {
+		if exchanged {library_service_response_destroy(&response)}
+		viewer_set_status("Similar images could not be loaded.")
+		return
+	}
+	library_service_response_destroy(&viewer.folder_search)
+	viewer.folder_search = response
+	viewer.search_active = true
+	viewer.folder_selected = 0
+	viewer_set_status(fmt.tprintf("Similar: %d images", len(viewer.folder_search.folder_images)))
+	viewer.needs_redraw = true
+}
+
+viewer_show_duplicates :: proc() {
+	root_id := viewer.active_root_id
+	if root_id <= 0 && len(viewer.roots.folders) > 0 {
+		root_id = viewer.roots.folders[0].root_id
+		viewer_activate_folder_source(root_id)
+	}
+	if root_id <= 0 {return}
+	response, exchanged := library_cli_exchange({
+		protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION,
+		command="folder.duplicates",
+		root_id=root_id,
+	})
+	if !exchanged || !response.ok {
+		if exchanged {library_service_response_destroy(&response)}
+		viewer_set_status("Duplicate groups could not be loaded.")
+		return
+	}
+	groups := response.similar_count
+	library_service_response_destroy(&viewer.folder_search)
+	viewer.folder_search = response
+	viewer.search_active = true
+	viewer.folder_selected = 0 if len(viewer.folder_search.folder_images) > 0 else -1
+	if groups == 0 {
+		viewer_set_status("No near-duplicate groups in this folder.")
+	} else {
+		viewer_set_status(fmt.tprintf("Duplicates: %d groups", groups))
+	}
+	viewer.needs_redraw = true
+}
+
+viewer_show_capture_similar :: proc(capture_id: string) {
+	if len(capture_id) == 0 {return}
+	response, exchanged := library_cli_exchange({
+		protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION,
+		command="similarity.similar",
+		capture_id=capture_id,
+	})
+	if !exchanged || !response.ok {
+		if exchanged {library_service_response_destroy(&response)}
+		viewer_set_status("Similar folder images could not be loaded.")
+		return
+	}
+	if len(response.folder_images) > 0 {
+		viewer_activate_folder_source(response.folder_images[0].root_id)
+	}
+	library_service_response_destroy(&viewer.folder_search)
+	viewer.folder_search = response
+	viewer.search_active = true
+	viewer.folder_selected = 0 if len(viewer.folder_search.folder_images) > 0 else -1
+	if len(viewer.folder_search.folder_images) == 0 {
+		viewer_set_status("No similar folder images for this capture.")
+	} else {
+		viewer_set_status(fmt.tprintf(
+			"Similar to capture: %d folder images",
+			len(viewer.folder_search.folder_images),
+		))
+	}
+	viewer.needs_redraw = true
+}
+
+viewer_check_similar_alert :: proc() {
+	if viewer.modal != .None {return}
+	response, exchanged := library_cli_exchange({
+		protocol_version=LIBRARY_SERVICE_PROTOCOL_VERSION,
+		command="similarity.pending",
+	})
+	if !exchanged || !response.ok {
+		if exchanged {library_service_response_destroy(&response)}
+		return
+	}
+	if !response.has_capture || response.similar_count <= 0 {
+		library_service_response_destroy(&response)
+		return
+	}
+	delete(viewer.confirmation_value)
+	viewer.confirmation_value = strings.clone(response.message)
+	delete(viewer.confirmation_buffer)
+	viewer.confirmation_buffer = ""
+	viewer.confirmation_kind = .Similar_Capture
+	viewer.modal = .Confirm
+	viewer_set_status(fmt.tprintf(
+		"Captured image is similar to %d other images.",
+		response.similar_count,
+	))
+	library_service_response_destroy(&response)
+	viewer.needs_redraw = true
 }

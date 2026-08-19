@@ -140,6 +140,11 @@ msg_float :: proc(receiver: Id, selector: Sel) -> f32 {
 	return p(receiver, selector)
 }
 
+msg_id_f64 :: proc(receiver: Id, selector: Sel, value: f64) -> Id {
+	p := transmute(proc "c" (Id, Sel, f64) -> Id)objc_send_address
+	return p(receiver, selector, value)
+}
+
 msg_id_f64_f64 :: proc(receiver: Id, selector: Sel, first, second: f64) -> Id {
 	p := transmute(proc "c" (Id, Sel, f64, f64) -> Id)objc_send_address
 	return p(receiver, selector, first, second)
